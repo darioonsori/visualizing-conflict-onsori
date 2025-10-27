@@ -1,0 +1,14 @@
+body {
+  font-family: Arial, sans-serif;
+  margin: 40px;
+  background-color: #f9f9f9;
+  color: #333;
+}
+
+h1 {
+  color: #c45a3b;
+}
+
+p {
+  max-width: 600px;
+}
