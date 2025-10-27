@@ -9,6 +9,4 @@ h1 {
   color: #c45a3b;
 }
 
-p {
-  max-width: 600px;
-}
+p { max-width: 70ch; }
