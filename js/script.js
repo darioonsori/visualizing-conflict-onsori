@@ -1,413 +1,221 @@
-// =======================================================
-// Data Visualization — Comparing Categories (OWID / UCDP)
-// Robust version: auto-detect latest year, filter real countries,
-// keep aggregates out, and render the 5 required charts.
-// =======================================================
+/* =========================================================
+   Top-10 conflict-related deaths — Countries only (year fixed)
+   Data: OWID / UCDP "deaths-in-armed-conflicts-by-type"
+   This script renders ONE chart and filters out regional aggregates.
+   Author: Dario Onsori (course assignment)
+   ========================================================= */
 
-// ---- PATHS ----
-const DATA_PATH = "data/conflict_deaths_by_type.csv";
+// ---------- CONFIG ----------
+const YEAR = 2023; // choose a completed year (e.g., 2022/2023) for stable data
 
-// ---- COLORS (fixed and color-blind friendly) ----
-const TYPE_COLORS = d3.scaleOrdinal()
-  .domain(["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"])
-  .range(["#6c8ae4","#f28e2b","#edc948","#59a14f","#e15759"]);
-
-// Countries to show in the grouped bar (must exist in your CSV)
-const FOCUS_COUNTRIES = [
-  "Ukraine", "Mexico", "Sudan", "Somalia", "Burkina Faso"
+// Try common filenames in /data (use the first that loads successfully)
+const DATA_CANDIDATES = [
+  "data/conflict_deaths_by_type.csv",
+  "data/deaths-in-armed-conflicts-by-type.csv",
+  "data/ConflictDataByType.csv"
 ];
 
-// ---------- Helpers ----------
-const fmtInt = d3.format(",");     // 12,345
-const fmtPct = d3.format(".0%");
+// Target container (created if missing)
+const TARGET = "#bar-top10";
 
-// Identify OWID aggregates reliably (e.g., World, regions)
-function isAggregate(row) {
-  // OWID use ISO3 for countries and OWID_* for aggregates.
-  // Accept only pure ISO3 codes (3 uppercase letters) and exclude OWID_*.
-  const code = row?.Code || row?.code || "";
-  if (!code) return true;
-  if (code.startsWith("OWID_")) return true;
-  return !/^[A-Z]{3}$/.test(code); // not an ISO3 country
-}
+// ---------- BOOTSTRAP ----------
+ensureContainer(TARGET, "Countries with the highest conflict-related deaths (Top 10)");
 
-// Safely get column names (case-insensitive includes)
-function detectColumns(sample) {
-  const headers = Object.keys(sample);
-  const find = (kw) => headers.find(h => h.toLowerCase().includes(kw)) || null;
+// Load the first available CSV and render
+loadFirstAvailableCSV(DATA_CANDIDATES, rowAutoType)
+  .then(({ rows, cols }) => {
+    // Keep only real countries — ISO3 codes (3 uppercase letters), exclude OWID_*
+    const isCountry = d => /^[A-Z]{3}$/.test(String(d[cols.code] || "")) && !String(d[cols.code]).startsWith("OWID");
 
-  return {
-    entity: find("entity") || "Entity",
-    code: find("code") || "Code",
-    year: find("year") || "Year",
-    interstate: find("conflict type: interstate"),
-    intrastate: find("conflict type: intrastate"),
-    extrasystemic: find("conflict type: extrasystemic"),
-    nonstate: find("conflict type: non-state"),
-    onesided: find("conflict type: one-sided")
-  };
-}
+    const yearRows = rows
+      .filter(d => +d[cols.year] === YEAR && isCountry(d))
+      .map(d => {
+        const interstate    = +d[cols.interstate]    || 0;
+        const intrastate    = +d[cols.intrastate]    || 0;
+        const extrasystemic = +d[cols.extrasystemic] || 0;
+        const nonstate      = +d[cols.nonstate]      || 0;
+        const onesided      = +d[cols.onesided]      || 0;
+        return {
+          name: d[cols.entity],
+          total: interstate + intrastate + extrasystemic + nonstate + onesided
+        };
+      })
+      .filter(d => d.total > 0);
 
-// ---------- Load & Prepare ----------
-d3.csv(DATA_PATH, d3.autoType).then(raw => {
-  if (!raw || !raw.length) {
-    console.error("CSV not found or empty.");
-    return;
-  }
+    const top10 = yearRows
+      .sort((a, b) => d3.descending(a.total, b.total))
+      .slice(0, 10);
 
-  const COL = detectColumns(raw[0]);
-  const NEED = ["interstate","intrastate","nonstate","onesided"];
-  if (NEED.some(k => !COL[k])) {
-    console.warn("Some conflict-type columns were not detected. Headers are:", Object.keys(raw[0]));
-  }
+    drawHorizontalBar(TARGET, top10, {
+      title: `Top 10 countries by conflict-related deaths in ${YEAR}`,
+      width: 900,
+      height: 420,
+      margin: { top: 14, right: 28, bottom: 48, left: 190 },
+      xFormat: d3.format(",")
+    });
 
-  // Normalize rows + compute total
-  const rows = raw.map(r => {
-    const item = {
-      entity: r[COL.entity],
-      code: r[COL.code],
-      year: +r[COL.year],
-      Interstate: +r[COL.interstate] || 0,
-      Intrastate: +r[COL.intrastate] || 0,
-      Extrasystemic: +r[COL.extrasystemic] || 0,
-      "Non-state": +r[COL.nonstate] || 0,
-      "One-sided": +r[COL.onesided] || 0
-    };
-    item.total = item.Interstate + item.Intrastate + item.Extrasystemic + item["Non-state"] + item["One-sided"];
-    return item;
+    addSourceNote(
+      TARGET,
+      `Source: UCDP via Our World in Data — year ${YEAR}. Values are absolute counts. Regional aggregates (e.g., Europe, Africa) are excluded.`
+    );
+  })
+  .catch(err => {
+    console.error("Failed to load any data file:", err);
+    d3.select(TARGET).append("p")
+      .attr("class", "error")
+      .text("Error: unable to load the dataset from /data. Check file name and path.");
   });
 
-  // Latest available year in the file (robust against updates)
-  const latestYear = d3.max(rows, d => d.year);
+/* =========================================================
+   Helpers
+   ========================================================= */
 
-  // Convenience selectors
-  const byYear = y => rows.filter(d => d.year === y);
-  const worldSeries = rows.filter(d => d.entity === "World").sort((a,b)=>a.year-b.year);
+/**
+ * Try to load the first available CSV among a list of paths.
+ * Also auto-detect OWID column names.
+ */
+async function loadFirstAvailableCSV(paths, rowParser) {
+  let lastErr = null;
+  for (const p of paths) {
+    try {
+      const rows = await d3.csv(p, rowParser);
+      if (rows && rows.length) {
+        const headers = Object.keys(rows[0] || {});
+        const findCol = kw => headers.find(h => h.toLowerCase().includes(kw));
 
-  // =====================================================
-  // 1) BARCHART — Top 10 countries by conflict deaths (latest year)
-  // =====================================================
-  {
-    const yearRows = byYear(latestYear)
-      .filter(d => !isAggregate(d) && d.total > 0); // keep countries only
-    const top10 = yearRows
-      .sort((a,b) => d3.descending(a.total, b.total))
-      .slice(0, 10)
-      .map(d => ({ name: d.entity, value: d.total }));
+        // Column detection for OWID/UCDP file
+        const cols = {
+          entity: findCol("entity") || "Entity",
+          code: findCol("code") || "Code",
+          year: findCol("year") || "Year",
+          interstate: findCol("conflict type: interstate"),
+          intrastate: findCol("conflict type: intrastate"),
+          extrasystemic: findCol("conflict type: extrasystemic"),
+          nonstate: findCol("conflict type: non-state"),
+          onesided: findCol("conflict type: one-sided")
+        };
 
-    drawHorizontalBar("#bar-top10-2024", top10, {
-      width: 980,
-      height: 430,
-      title: `Countries with the highest conflict-related deaths in ${latestYear} (Top 10)`,
-      xFormat: fmtInt
-    });
-
-    addSource("#bar-top10-2024", "Source: UCDP via Our World in Data. Values are absolute counts.");
+        // Minimal sanity check
+        if (!cols.entity || !cols.code || !cols.year) {
+          throw new Error("Missing core columns (Entity/Code/Year).");
+        }
+        if (!cols.intrastate || !cols.nonstate || !cols.onesided) {
+          console.warn("Some conflict-type columns were not detected. Headers:", headers);
+        }
+        return { rows, cols, path: p };
+      }
+    } catch (e) {
+      lastErr = e;
+      // try next candidate
+    }
   }
+  throw lastErr || new Error("No CSV file could be loaded.");
+}
 
-  // =====================================================
-  // 2) GROUPED BAR — deaths by type for selected countries (latest year)
-  // =====================================================
-  {
-    const KEYS = ["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"];
-
-    // Keep only selected countries that exist in the file
-    const yearRows = byYear(latestYear).filter(d =>
-      !isAggregate(d) && FOCUS_COUNTRIES.includes(d.entity)
-    );
-
-    const tidy = yearRows.map(d => ({
-      group: d.entity,
-      values: KEYS.map(k => ({ key: k, value: d[k] }))
-    }));
-
-    drawGroupedBar("#grouped-2024", tidy, {
-      keys: KEYS,
-      width: 980,
-      height: 440,
-      title: `Conflict deaths by type (selected countries, ${latestYear})`
-    });
-
-    addSource("#grouped-2024", "Source: UCDP via Our World in Data. Categories are conflict types.");
+/** D3 row parser: numeric auto-cast where possible */
+function rowAutoType(d) {
+  for (const k in d) {
+    if (d[k] === "") continue;
+    const v = +d[k];
+    if (!Number.isNaN(v) && String(v) === String(d[k])) d[k] = v;
   }
+  return d;
+}
 
-  // =====================================================
-  // 3) HEATMAP — global deaths by type and year (World)
-  // =====================================================
-  {
-    const KEYS = ["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"];
-    const matrix = [];
-
-    worldSeries.forEach(d => {
-      KEYS.forEach(k => matrix.push({ row: k, col: d.year, value: d[k] }));
-    });
-
-    drawHeatmap("#heatmap-global", matrix, {
-      width: 980,
-      height: 280,
-      title: "Global conflict deaths by type and year"
-    });
-
-    addSource("#heatmap-global", "Source: UCDP via Our World in Data. Color encodes absolute counts.");
+/** Ensure a container exists; if missing, create it with an optional heading */
+function ensureContainer(selector, headingText = "") {
+  let node = document.querySelector(selector);
+  if (!node) {
+    node = document.createElement("div");
+    node.id = selector.replace(/^#/, "");
+    document.body.appendChild(node);
   }
-
-  // =====================================================
-  // 4) 100% STACKED BAR — share of each type by year (World)
-  // =====================================================
-  {
-    const KEYS = ["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"];
-    const series = worldSeries.map(d => {
-      const total = d.total || 1;
-      const o = { year: d.year };
-      KEYS.forEach(k => { o[k] = (d[k] || 0) / total; });
-      return o;
-    });
-
-    drawStacked100("#stacked-100", series, {
-      keys: KEYS,
-      width: 980,
-      height: 320,
-      title: "Share of conflict deaths by type (World, 100% stacked)"
-    });
-
-    addSource("#stacked-100", "Source: UCDP via Our World in Data. Bars sum to 100% per year.");
+  if (headingText) {
+    const h = document.createElement("h3");
+    h.textContent = headingText;
+    node.appendChild(h);
   }
+}
 
-  // =====================================================
-  // 5) WAFFLE — composition in the latest year (World)
-  // =====================================================
-  {
-    const w = worldSeries.find(d => d.year === latestYear) || worldSeries.at(-1);
-    const parts = [
-      { name: "Interstate",   value: w?.Interstate   || 0 },
-      { name: "Intrastate",   value: w?.Intrastate   || 0 },
-      { name: "Extrasystemic",value: w?.Extrasystemic|| 0 },
-      { name: "Non-state",    value: w?.["Non-state"]|| 0 },
-      { name: "One-sided",    value: w?.["One-sided"]|| 0 }
-    ];
+/** Append a small source/caption paragraph after the chart */
+function addSourceNote(containerSel, text) {
+  const el = document.querySelector(containerSel);
+  if (!el) return;
+  const p = document.createElement("p");
+  p.className = "source-note";
+  p.textContent = text;
+  el.appendChild(p);
+}
 
-    drawWaffle("#waffle-2024", parts, {
-      cols: 10,
-      rows: 10,
-      size: 18,
-      gap: 2,
-      title: `Composition of global conflict deaths by type in ${latestYear} (World)`
-    });
+/**
+ * Basic horizontal bar chart (accessibility-friendly axes, value labels).
+ * data: [{ name, total }]
+ */
+function drawHorizontalBar(
+  sel,
+  data,
+  { title = "", width = 900, height = 380, margin = { top: 10, right: 20, bottom: 40, left: 180 }, xFormat = d3.format(",") } = {}
+) {
+  const container = d3.select(sel);
+  container.select("svg").remove(); // clear previous render
 
-    addSource("#waffle-2024", "Source: UCDP via Our World in Data. Each square ≈ 1% of the total.");
+  const svg = container.append("svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("role", "img")
+    .attr("aria-label", title);
+
+  if (title) {
+    svg.append("title").text(title);
   }
-})
-.catch(err => console.error("Failed to load CSV:", err));
-
-/* =====================================================
-   Components
-===================================================== */
-
-// Horizontal bar chart
-function drawHorizontalBar(sel, data, {
-  width = 900,
-  height = 380,
-  margin = { top: 16, right: 24, bottom: 44, left: 200 },
-  title = "",
-  xFormat = d3.format(",")
-} = {}) {
-  if (!data || !data.length) return;
-
-  const svg = d3.select(sel).append("svg").attr("width", width).attr("height", height);
-  if (title) svg.append("text").attr("x", margin.left).attr("y", 14).attr("class", "chart-title").text(title);
-
-  const innerTop = margin.top + (title ? 16 : 0);
 
   const x = d3.scaleLinear()
-    .domain([0, d3.max(data, d => d.value) || 1]).nice()
+    .domain([0, d3.max(data, d => d.total) || 1])
+    .nice()
     .range([margin.left, width - margin.right]);
 
   const y = d3.scaleBand()
     .domain(data.map(d => d.name))
-    .range([innerTop, height - margin.bottom])
+    .range([margin.top, height - margin.bottom])
     .padding(0.15);
 
+  // Axes
   svg.append("g")
     .attr("transform", `translate(0,${height - margin.bottom})`)
-    .attr("class", "axis")
+    .attr("class", "axis x-axis")
     .call(d3.axisBottom(x).ticks(6).tickFormat(xFormat));
 
   svg.append("g")
     .attr("transform", `translate(${margin.left},0)`)
-    .attr("class", "axis")
+    .attr("class", "axis y-axis")
     .call(d3.axisLeft(y));
 
-  svg.append("g").selectAll("rect").data(data).join("rect")
-    .attr("x", x(0))
-    .attr("y", d => y(d.name))
-    .attr("width", d => x(d.value) - x(0))
-    .attr("height", y.bandwidth())
-    .attr("fill", "#8aa6ff");
-}
-
-// Grouped bar
-function drawGroupedBar(sel, rows, {
-  keys,
-  width = 980,
-  height = 420,
-  margin = { top: 16, right: 24, bottom: 72, left: 56 },
-  title = ""
-} = {}) {
-  if (!rows || !rows.length) return;
-
-  const svg = d3.select(sel).append("svg").attr("width", width).attr("height", height);
-  if (title) svg.append("text").attr("x", margin.left).attr("y", 14).attr("class", "chart-title").text(title);
-
-  const innerTop = margin.top + (title ? 16 : 0);
-  const groups = rows.map(d => d.group);
-  const flat = rows.flatMap(d => d.values.map(v => ({ group: d.group, key: v.key, value: v.value })));
-
-  const x0 = d3.scaleBand().domain(groups).range([margin.left, width - margin.right]).padding(0.2);
-  const x1 = d3.scaleBand().domain(keys).range([0, x0.bandwidth()]).padding(0.08);
-  const y = d3.scaleLinear().domain([0, d3.max(flat, d => d.value) || 1]).nice().range([height - margin.bottom, innerTop]);
-
+  // Bars
   svg.append("g")
-    .attr("transform", `translate(0,${height - margin.bottom})`)
-    .attr("class", "axis")
-    .call(d3.axisBottom(x0))
-    .selectAll("text")
-    .attr("transform", "rotate(-18)")
-    .style("text-anchor", "end");
+    .selectAll("rect")
+    .data(data)
+    .join("rect")
+      .attr("x", x(0))
+      .attr("y", d => y(d.name))
+      .attr("width", d => x(d.total) - x(0))
+      .attr("height", y.bandwidth())
+      .attr("fill", "#8EA8FF");
 
+  // Value labels (end of bars)
+  const fmt = d3.format(",");
   svg.append("g")
-    .attr("transform", `translate(${margin.left},0)`)
-    .attr("class", "axis")
-    .call(d3.axisLeft(y).ticks(5));
+    .selectAll("text.value")
+    .data(data)
+    .join("text")
+      .attr("class", "value")
+      .attr("x", d => x(d.total) + 6)
+      .attr("y", d => y(d.name) + y.bandwidth() / 2 + 4)
+      .text(d => fmt(d.total))
+      .attr("fill", "#555")
+      .attr("font-size", "11px");
 
-  svg.append("g").selectAll("g").data(rows).join("g")
-    .attr("transform", d => `translate(${x0(d.group)},0)`)
-    .selectAll("rect").data(d => d.values).join("rect")
-    .attr("x", d => x1(d.key))
-    .attr("y", d => y(d.value))
-    .attr("width", x1.bandwidth())
-    .attr("height", d => y(0) - y(d.value))
-    .attr("fill", d => TYPE_COLORS(d.key));
-
-  // Legend
-  const legend = d3.select(sel).append("div").attr("class", "legend");
-  keys.forEach(k => legend.append("span").html(`<i style="background:${TYPE_COLORS(k)}"></i>${k}`));
-}
-
-// Heatmap
-function drawHeatmap(sel, matrix, {
-  width = 980,
-  height = 260,
-  margin = { top: 28, right: 20, bottom: 32, left: 96 },
-  title = ""
-} = {}) {
-  if (!matrix || !matrix.length) return;
-
-  const years = [...new Set(matrix.map(d => d.col))].sort((a, b) => a - b);
-  const rows = [...new Set(matrix.map(d => d.row))];
-
-  const svg = d3.select(sel).append("svg").attr("width", width).attr("height", height);
-  if (title) svg.append("text").attr("x", margin.left).attr("y", 18).attr("class", "chart-title").text(title);
-
-  const innerTop = margin.top + (title ? 10 : 0);
-  const cellW = (width - margin.left - margin.right) / years.length;
-  const cellH = (height - innerTop - margin.bottom) / rows.length;
-
-  const max = d3.max(matrix, d => d.value) || 1;
-  const color = d3.scaleSequential(d3.interpolateOrRd).domain([0, max]);
-
-  const g = svg.append("g");
-
-  rows.forEach((r, ri) => {
-    years.forEach((y, ci) => {
-      const v = matrix.find(d => d.row === r && d.col === y)?.value || 0;
-      g.append("rect")
-        .attr("x", margin.left + ci * cellW)
-        .attr("y", innerTop + ri * cellH)
-        .attr("width", cellW)
-        .attr("height", cellH)
-        .attr("fill", color(v));
-    });
-  });
-
-  const xAxis = d3.axisBottom(d3.scalePoint().domain(years.filter(y => y % 4 === 0)).range([margin.left, width - margin.right]));
-  const yAxis = d3.axisLeft(d3.scalePoint().domain(rows).range([innerTop, height - margin.bottom]));
-
-  svg.append("g").attr("transform", `translate(0,${height - margin.bottom})`).attr("class", "axis").call(xAxis);
-  svg.append("g").attr("transform", `translate(${margin.left},0)`).attr("class", "axis").call(yAxis);
-}
-
-// 100% Stacked bars
-function drawStacked100(sel, series, {
-  keys,
-  width = 980,
-  height = 320,
-  margin = { top: 16, right: 24, bottom: 40, left: 56 },
-  title = ""
-} = {}) {
-  if (!series || !series.length) return;
-
-  const svg = d3.select(sel).append("svg").attr("width", width).attr("height", height);
-  if (title) svg.append("text").attr("x", margin.left).attr("y", 14).attr("class", "chart-title").text(title);
-
-  const innerTop = margin.top + (title ? 16 : 0);
-
-  const x = d3.scaleBand().domain(series.map(d => d.year)).range([margin.left, width - margin.right]).padding(0.08);
-  const y = d3.scaleLinear().domain([0, 1]).range([height - margin.bottom, innerTop]);
-
-  const stack = d3.stack().keys(keys)(series);
-
-  svg.append("g").selectAll("g").data(stack).join("g")
-    .attr("fill", d => TYPE_COLORS(d.key))
-    .selectAll("rect").data(d => d).join("rect")
-    .attr("x", d => x(d.data.year))
-    .attr("y", d => y(d[1]))
-    .attr("height", d => y(d[0]) - y(d[1]))
-    .attr("width", x.bandwidth());
-
-  svg.append("g").attr("transform", `translate(0,${height - margin.bottom})`).attr("class", "axis")
-    .call(d3.axisBottom(x).tickValues(x.domain().filter(y => y % 4 === 0)));
-  svg.append("g").attr("transform", `translate(${margin.left},0)`).attr("class", "axis")
-    .call(d3.axisLeft(y).tickFormat(fmtPct));
-
-  const legend = d3.select(sel).append("div").attr("class", "legend");
-  keys.forEach(k => legend.append("span").html(`<i style="background:${TYPE_COLORS(k)}"></i>${k}`));
-}
-
-// Waffle chart
-function drawWaffle(sel, parts, {
-  cols = 10,
-  rows = 10,
-  size = 18,
-  gap = 2,
-  title = ""
-} = {}) {
-  if (!parts || !parts.length) return;
-
-  const total = d3.sum(parts, d => d.value) || 1;
-  const units = parts.map(d => ({ name: d.name, units: Math.round(100 * (d.value / total)) }));
-
-  let tiles = [];
-  units.forEach(u => { for (let i = 0; i < u.units; i++) tiles.push({ name: u.name }); });
-  tiles = tiles.slice(0, cols * rows);
-
-  const width = cols * (size + gap) + 20;
-  const height = rows * (size + gap) + 26;
-
-  const svg = d3.select(sel).append("svg").attr("width", width).attr("height", height);
-  if (title) svg.append("text").attr("x", 10).attr("y", 16).attr("class", "chart-title").text(title);
-
-  svg.append("g").attr("transform", "translate(10,6)")
-    .selectAll("rect").data(tiles).join("rect")
-    .attr("x", (d, i) => (i % cols) * (size + gap))
-    .attr("y", (d, i) => Math.floor(i / cols) * (size + gap))
-    .attr("width", size).attr("height", size)
-    .attr("fill", d => TYPE_COLORS(d.name));
-
-  const legend = d3.select(sel).append("div").attr("class", "legend");
-  parts.forEach(p => legend.append("span").html(`<i style="background:${TYPE_COLORS(p.name)}"></i>${p.name}`));
-}
-
-// Small source line under a chart container
-function addSource(sel, text) {
-  d3.select(sel).append("div").attr("class", "source-note").text(text);
+  // X-axis helper note (optional, for interpretation)
+  container.append("p")
+    .attr("class", "helper-note")
+    .text("Horizontal bars compare absolute totals. Sorting by value emphasizes relative scale across countries.");
 }
