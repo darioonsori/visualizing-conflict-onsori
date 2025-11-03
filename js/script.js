@@ -1,50 +1,50 @@
 /**************************************************************
  * Top 10 countries by conflict-related deaths (snapshot year)
- * Data: OWID/UCDP “deaths-in-armed-conflicts-by-type.csv”
+ * Data: OWID/UCDP “conflict_deaths_by_type.csv”
  * Rule to exclude regions: keep rows with a valid ISO3 code
  * (exactly 3 uppercase letters) and drop “World”.
  **************************************************************/
 
-const DATA_PATH = "data/conflict_deaths_by_type.csv";
-const SNAPSHOT_YEAR = 2023; // <- change here if you want a different year
+const DATA_PATH = "data/conflict_deaths_by_type.csv"; // <-- path esatto come nella tua repo
+const SNAPSHOT_YEAR = 2023;                            // <-- cambia se vuoi un altro anno
 
-// If the container isn't in the HTML, create one at runtime
+// Ensure container exists (defensive: if missing in HTML, create it)
 let mount = d3.select("#bar-top10-2023");
 if (mount.empty()) {
   mount = d3.select("body").append("div").attr("id", "bar-top10-2023");
 }
 
-// ---------- Helpers ----------
+/* ---------- Helpers ---------- */
 const isISO3 = code => typeof code === "string" && /^[A-Z]{3}$/.test(code);
 
 /**
  * Auto-detect the relevant columns by name substring.
- * Works across minor header variations.
+ * Works across minor header variations in OWID exports.
  */
-function detectColumns(headers) {
+function detectColumns(headers){
   const h = headers.map(s => s.toLowerCase());
   const find = kw => headers[h.findIndex(x => x.includes(kw))];
 
   return {
-    entity: find("entity") || "Entity",
-    code: find("code") || "Code",
-    year: find("year") || "Year",
+    entity:     find("entity")   || "Entity",
+    code:       find("code")     || "Code",
+    year:       find("year")     || "Year",
     interstate: find("conflict type: interstate"),
     intrastate: find("conflict type: intrastate"),
-    extrasystemic: find("conflict type: extrasystemic"),
-    nonstate: find("conflict type: non-state"),
-    onesided: find("conflict type: one-sided")
+    extrasys:   find("conflict type: extrasystemic"), // may be absent in some cuts
+    nonstate:   find("conflict type: non-state"),
+    onesided:   find("conflict type: one-sided"),
   };
 }
 
 /**
- * Render a clean horizontal bar chart.
+ * Draw a simple horizontal bar chart.
  */
-function drawBarChart(selection, data, opts = {}) {
+function drawBarChart(selection, data, opts = {}){
   const {
-    width = 900,
-    height = 420,
-    margin = { top: 16, right: 24, bottom: 40, left: 180 },
+    width = 920,
+    height = 430,
+    margin = { top: 16, right: 24, bottom: 44, left: 180 },
     barColor = "#8aa6ff",
     xTickFormat = d3.format(",")
   } = opts;
@@ -84,7 +84,7 @@ function drawBarChart(selection, data, opts = {}) {
       .attr("height", y.bandwidth())
       .attr("fill", barColor);
 
-  // Value labels (right-aligned at bar end)
+  // Right-aligned value labels
   const fmt = d3.format(",");
   svg.append("g")
     .selectAll("text.value")
@@ -98,59 +98,52 @@ function drawBarChart(selection, data, opts = {}) {
       .text(d => fmt(d.value));
 }
 
-// ---------- Load & Prepare ----------
+/* ------------------ Load & filter ------------------ */
 d3.csv(DATA_PATH, d3.autoType).then(raw => {
-  if (!raw || !raw.length) {
-    console.error("CSV not loaded or empty.");
+  if (!raw?.length) {
+    console.error("CSV not loaded or empty");
     return;
   }
 
   const cols = detectColumns(Object.keys(raw[0]));
-  // Sanity check for required columns
-  const missing = ["interstate","intrastate","nonstate","onesided"]
-    .filter(k => !cols[k]);
-  if (missing.length) {
-    console.warn("Some conflict-type columns are missing:", missing);
-  }
 
-  // Normalize rows and compute totals across conflict types
-  const normalized = raw.map(r => {
+  // Normalize + sum across conflict types (missing columns -> 0)
+  const rows = raw.map(r => {
     const rec = {
       entity: r[cols.entity],
-      code: r[cols.code],
-      year: +r[cols.year],
-      Interstate: +r[cols.interstate] || 0,
-      Intrastate: +r[cols.intrastate] || 0,
-      Extrasystemic: cols.extrasystemic ? (+r[cols.extrasystemic] || 0) : 0,
-      "Non-state": +r[cols.nonstate] || 0,
-      "One-sided": +r[cols.onesided] || 0
+      code:   r[cols.code],
+      year:  +r[cols.year],
+      Interstate:   +r[cols.interstate] || 0,
+      Intrastate:   +r[cols.intrastate] || 0,
+      Extrasystemic: cols.extrasys ? (+r[cols.extrasys] || 0) : 0,
+      "Non-state":  +r[cols.nonstate]  || 0,
+      "One-sided":  +r[cols.onesided]  || 0
     };
     rec.total = rec.Interstate + rec.Intrastate + rec.Extrasystemic + rec["Non-state"] + rec["One-sided"];
     return rec;
   });
 
-  // Keep only countries:
-  //  - valid ISO3 code (3 uppercase letters)
-  //  - entity not equal to 'World'
-  const countries = normalized.filter(d => isISO3(d.code) && d.entity !== "World");
+  // Keep only true countries:
+  // - Code must be a valid ISO3 (=== 3 uppercase letters)
+  // - Exclude "World" explicitly in case it has a code in some cut
+  const countryRows = rows.filter(d => isISO3(d.code) && d.entity !== "World");
 
-  // Snapshot year (single year ranking)
-  const yearRows = countries.filter(d => d.year === SNAPSHOT_YEAR && d.total > 0);
+  // Snapshot year (change SNAPSHOT_YEAR above if needed)
+  const yearRows = countryRows.filter(d => d.year === SNAPSHOT_YEAR && d.total > 0);
 
-  // Build Top 10 (descending by total deaths)
+  // Top 10 countries
   const top10 = d3.sort(yearRows, (a, b) => d3.descending(a.total, b.total))
                   .slice(0, 10)
                   .map(d => ({ name: d.entity, value: d.total }));
 
   // Render
-  drawBarChart(mount, top10, { width: 920, height: 430 });
+  mount.selectAll("*").remove();
+  drawBarChart(mount, top10);
 
-  // Footnote (source + note)
+  // Source note (kept in HTML too, but useful if the chart is re-mounted elsewhere)
   mount.append("div")
     .attr("class", "chart-note")
     .style("margin-top", "6px")
-    .style("font-size", "12px")
-    .style("color", "#666")
-    .text("Source: UCDP via Our World in Data. Values are absolute counts; regional aggregates excluded.");
+    .text("Source: UCDP via Our World in Data. Values are absolute counts; regional aggregates excluded by ISO3 filtering.");
 })
 .catch(err => console.error("Error loading CSV:", err));
