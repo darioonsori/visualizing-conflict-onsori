@@ -5,7 +5,7 @@
  * (exactly 3 uppercase letters) and drop “World”.
  **************************************************************/
 
-const DATA_PATH = "data/deaths-in-armed-conflicts-by-type.csv";
+const DATA_PATH = "data/conflict_deaths_by_type.csv";
 const SNAPSHOT_YEAR = 2023; // <- change here if you want a different year
 
 // If the container isn't in the HTML, create one at runtime
