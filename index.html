@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Visualizing Conflict and Human Suffering through Data</title>
   <link rel="stylesheet" href="css/style.css" />
-  <meta name="description" content="Comparing categories with open data (OWID / UCDP). Top-10 countries by conflict-related deaths." />
 </head>
 <body>
   <header class="container">
@@ -17,41 +16,50 @@
     <section aria-labelledby="intro-title">
       <h2 id="intro-title">Introduction</h2>
       <p>
-        This website explores how data visualization can represent global conflicts and humanitarian issues.
-        Using open data from <em>Our World in Data</em> and the Uppsala Conflict Data Program, we compare categories
-        with multiple encodings to surface different perspectives on the same underlying facts.
+        This website explores how data visualization can represent global conflicts and
+        humanitarian issues. Using open data from <em>Our World in Data</em> and the
+        Uppsala Conflict Data Program, we compare categories with multiple encodings to
+        surface different perspectives on the same underlying facts.
       </p>
     </section>
 
     <section aria-labelledby="comp-title">
       <h2 id="comp-title">Comparing Categories</h2>
-      <p class="section-note">
-        Charts comparing conflict-related deaths by country and conflict type. Snapshot year and granularity are
-        indicated per chart. Regional aggregates are excluded from country rankings.
+      <p>
+        Charts comparing conflict-related deaths by country and conflict type. Snapshot year and
+        granularity are indicated per chart. Regional aggregates are excluded from country rankings.
       </p>
 
-      <!-- ===== Bar chart: Top-10 countries (2023) ===== -->
-      <article class="card" aria-labelledby="bar2023-title">
-        <h3 id="bar2023-title">Countries with the highest conflict-related deaths in 2023 (Top 10)</h3>
-        <div id="bar-top10-2023" class="chart" role="img" aria-label="Horizontal bar chart of the top ten countries by conflict-related deaths in 2023"></div>
-        <p class="chart-note">
-          Horizontal bars compare absolute totals. Values are counts of deaths (combatants and civilians) during ongoing armed conflicts.
-          Data source: UCDP via Our World in Data. Regional aggregates (e.g., Europe, Africa) are excluded.
+      <!-- Chart 1: Top-10 countries -->
+      <section class="chart-card">
+        <h3>Countries with the highest conflict-related deaths in 2023 (Top 10)</h3>
+        <div id="bar-top10-2023"></div>
+        <p class="note">
+          Horizontal bars compare absolute totals. Values are counts of deaths (combatants and civilians)
+          during ongoing armed conflicts. Data source: UCDP via Our World in Data. Regional aggregates
+          (e.g., Europe, Africa) are excluded.
         </p>
-      </article>
-      <!-- /Bar chart -->
+      </section>
+
+      <!-- Chart 2: Grouped bar by type -->
+      <section class="chart-card">
+        <h3>Conflict deaths by type (selected countries, 2023)</h3>
+        <div id="grouped-2023"></div>
+        <p class="note">
+          Bars are grouped by country; color encodes conflict type (UCDP categories). Snapshot year: 2023.
+          Countries are filtered by valid ISO3 code; regional aggregates and “World” are excluded.
+        </p>
+      </section>
     </section>
   </main>
 
   <footer class="container footer">
-    <small>
-      © 2025 — Dario Onsori. Data: UCDP via Our World in Data (CC BY). This site is for educational purposes (Data Visualization course).
-    </small>
+    <small>© 2025 — Dario Onsori. Data: UCDP via Our World in Data (CC BY). This site is for educational purposes (Data Visualization course).</small>
   </footer>
 
   <!-- D3 -->
-  <script src="https://d3js.org/d3.v7.min.js" defer></script>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
   <!-- Your code -->
-  <script src="js/script.js" defer></script>
+  <script src="js/script.js"></script>
 </body>
 </html>
