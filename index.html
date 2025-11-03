@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Visualizing Conflict and Human Suffering through Data</title>
   <link rel="stylesheet" href="css/style.css" />
+  <meta name="description" content="Comparing categories with open data (OWID / UCDP). Top-10 countries by conflict-related deaths." />
 </head>
 <body>
   <header class="container">
@@ -13,8 +14,8 @@
   </header>
 
   <main class="container">
-    <section aria-labelledby="intro">
-      <h2 id="intro">Introduction</h2>
+    <section aria-labelledby="intro-title">
+      <h2 id="intro-title">Introduction</h2>
       <p>
         This website explores how data visualization can represent global conflicts and humanitarian issues.
         Using open data from <em>Our World in Data</em> and the Uppsala Conflict Data Program, we compare categories
@@ -22,57 +23,35 @@
       </p>
     </section>
 
-    <section aria-labelledby="compare">
-      <h2 id="compare">Comparing Categories</h2>
-      <p>
+    <section aria-labelledby="comp-title">
+      <h2 id="comp-title">Comparing Categories</h2>
+      <p class="section-note">
         Charts comparing conflict-related deaths by country and conflict type. Snapshot year and granularity are
         indicated per chart. Regional aggregates are excluded from country rankings.
       </p>
 
-      <!-- 1) Bar chart -->
-      <article class="card" aria-labelledby="bar-top10-title">
-        <h3 id="bar-top10-title">
-          Countries with the highest conflict-related deaths in 2023 (Top 10)
-        </h3>
-        <div id="bar-top10-2023"></div>
-        <p class="chart-caption" id="bar-top10-caption"></p>
+      <!-- ===== Bar chart: Top-10 countries (2023) ===== -->
+      <article class="card" aria-labelledby="bar2023-title">
+        <h3 id="bar2023-title">Countries with the highest conflict-related deaths in 2023 (Top 10)</h3>
+        <div id="bar-top10-2023" class="chart" role="img" aria-label="Horizontal bar chart of the top ten countries by conflict-related deaths in 2023"></div>
+        <p class="chart-note">
+          Horizontal bars compare absolute totals. Values are counts of deaths (combatants and civilians) during ongoing armed conflicts.
+          Data source: UCDP via Our World in Data. Regional aggregates (e.g., Europe, Africa) are excluded.
+        </p>
       </article>
-
-      <!-- 2) Grouped bar -->
-      <article class="card" aria-labelledby="grouped-title">
-        <h3 id="grouped-title">Conflict deaths by type (selected countries, 2023)</h3>
-        <div id="grouped-2023"></div>
-      </article>
-
-      <!-- 3) Heatmap -->
-      <article class="card" aria-labelledby="heatmap-title">
-        <h3 id="heatmap-title">Global conflict deaths by type and year</h3>
-        <div id="heatmap-global"></div>
-      </article>
-
-      <!-- 4) 100% stacked -->
-      <article class="card" aria-labelledby="stacked-title">
-        <h3 id="stacked-title">Share of conflict deaths by type (World, 1989–2024)</h3>
-        <div id="stacked-100"></div>
-      </article>
-
-      <!-- 5) Waffle -->
-      <article class="card" aria-labelledby="waffle-title">
-        <h3 id="waffle-title">Composition of conflict deaths by type (World, latest year)</h3>
-        <div id="waffle-2024"></div>
-      </article>
+      <!-- /Bar chart -->
     </section>
   </main>
 
   <footer class="container footer">
-    <p>
-      Source: UCDP via Our World in Data. Values are absolute counts. Website by Dario Onsori for the
-      “Data Visualization” course.
-    </p>
+    <small>
+      © 2025 — Dario Onsori. Data: UCDP via Our World in Data (CC BY). This site is for educational purposes (Data Visualization course).
+    </small>
   </footer>
 
   <!-- D3 -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
+  <!-- Your code -->
   <script src="js/script.js"></script>
 </body>
 </html>
