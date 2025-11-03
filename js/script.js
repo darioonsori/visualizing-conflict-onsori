@@ -1,26 +1,18 @@
-/***********************************************************
- * Charts for “Comparing Categories”
- * Data: OWID/UCDP “deaths-in-armed-conflicts-by-type.csv”
- * File path expected: data/conflict_deaths_by_type.csv
- ***********************************************************/
+/*********************************************************
+ * Top-10 chart (2023) + Grouped bar (top-5 auto-detected)
+ * Data: OWID/UCDP "deaths-in-armed-conflicts-by-type.csv"
+ * Filtering: keep rows with a valid ISO3 country code and
+ *            drop aggregates like "World", "Europe", etc.
+ *********************************************************/
 
-/* ---------------- Configuration ---------------- */
 const DATA_PATH = "data/conflict_deaths_by_type.csv";
-const SNAPSHOT_YEAR = 2023;                         // change if you prefer another year
-const GROUPED_COUNTRIES_2023 = ["Ukraine", "Palestine", "Mexico", "Sudan", "Nigeria"]; // editable
+const SNAPSHOT_YEAR = 2023; // cambia se vuoi un altro anno
 
-// Color palette for conflict types (kept stable across charts)
-const TYPE_COLORS = d3.scaleOrdinal()
-  .domain(["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"])
-  .range(["#6c8ae4","#f28e2b","#edc948","#59a14f","#e15759"]);
-
-/* ---------------- Helpers ---------------- */
-
-// Keep only sovereign countries (rows with a valid 3-letter ISO code)
+// ---------- Utilities ----------
 const isISO3 = code => typeof code === "string" && /^[A-Z]{3}$/.test(code);
 
-// Auto-detect column names by keyword (more robust across minor header changes)
-function detectColumns(headers){
+// Try to detect column names even if headers vary slightly
+function detectColumns(headers) {
   const h = headers.map(s => s.toLowerCase());
   const find = kw => headers[h.findIndex(x => x.includes(kw))];
 
@@ -36,24 +28,15 @@ function detectColumns(headers){
   };
 }
 
-// Simple fixed-position tooltip
-const tip = (() => {
-  const el = d3.select("body").append("div").attr("class","tooltip");
-  return {
-    show(html, [x,y]){
-      el.html(html).style("left", x + "px").style("top", y + "px").style("opacity", 1);
-    },
-    hide(){ el.style("opacity", 0); }
-  };
-})();
+// ---------- Load & prepare ----------
+d3.csv(DATA_PATH, d3.autoType).then(raw => {
+  if (!raw || !raw.length) {
+    console.error("CSV empty or not loaded:", DATA_PATH);
+    return;
+  }
 
-/* ---------------- Load & Prepare ---------------- */
-d3.csv(DATA_PATH).then(raw => {
-  if (!raw?.length) throw new Error("CSV not found or empty.");
-
-  // Detect headers and normalize records
   const COL = detectColumns(Object.keys(raw[0]));
-  const rows = raw.map(d => ({
+  const tidy = raw.map(d => ({
     entity: d[COL.entity],
     code: d[COL.code],
     year: +d[COL.year],
@@ -62,164 +45,159 @@ d3.csv(DATA_PATH).then(raw => {
     Extrasystemic: +d[COL.extrasystemic] || 0,
     "Non-state": +d[COL.nonstate] || 0,
     "One-sided": +d[COL.onesided] || 0
-  })).map(d => ({...d, total: d.Interstate + d.Intrastate + d.Extrasystemic + d["Non-state"] + d["One-sided"]}));
+  })).map(d => ({
+    ...d,
+    total: d.Interstate + d.Intrastate + d.Extrasystemic + d["Non-state"] + d["One-sided"]
+  }));
 
-  // ---------------- Chart 1: Top-10 countries (snapshot) ----------------
-  {
-    const dataYear = rows.filter(d => d.year === SNAPSHOT_YEAR);
-    // Keep only sovereign countries (valid ISO3) and drop “World”
-    const countries = dataYear.filter(d => isISO3(d.code) && d.entity !== "World" && d.total > 0);
-    const top10 = countries.sort((a,b) => d3.descending(a.total, b.total)).slice(0, 10)
-      .map(d => ({ name: d.entity, value: d.total }));
+  // Keep only rows with a valid ISO3 -> removes regions/aggregates automatically
+  const countriesOnly = tidy.filter(d => isISO3(d.code));
 
-    drawBar("#bar-top10-2023", top10, {
-      width: 940,
-      height: 360,
-      label: "deaths",
-      xFormat: d3.format(",")
-    });
-  }
+  // ---------- 1) Top-10 countries (2023) ----------
+  const rows2023 = countriesOnly.filter(d => d.year === SNAPSHOT_YEAR && d.total > 0);
+  const top10 = rows2023
+    .sort((a, b) => d3.descending(a.total, b.total))
+    .slice(0, 10)
+    .map(d => ({ name: d.entity, value: d.total }));
 
-  // ---------------- Chart 2: Grouped bar by type (selected countries) ----------------
-  {
-    const TYPE_KEYS = ["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"];
-    const dataYear = rows.filter(d => d.year === SNAPSHOT_YEAR && isISO3(d.code));
-    const subset = dataYear.filter(d => GROUPED_COUNTRIES_2023.includes(d.entity));
+  drawBar("#bar-top10-2023", top10, {
+    width: 980,
+    height: 380,
+    title: "Countries with the highest conflict-related deaths in 2023 (Top 10)",
+    xFormat: d3.format(",")
+  });
 
-    const tidy = subset.map(d => ({
+  // ---------- 2) Grouped bar (auto-detected top-5) ----------
+  const KEYS = ["Interstate", "Intrastate", "Extrasystemic", "Non-state", "One-sided"];
+
+  const top5Names = rows2023
+    .sort((a, b) => d3.descending(a.total, b.total))
+    .slice(0, 5)
+    .map(d => d.entity);
+
+  console.log("Grouped bar — selected countries:", top5Names);
+
+  const groupedRows = countriesOnly
+    .filter(d => d.year === SNAPSHOT_YEAR && top5Names.includes(d.entity))
+    .map(d => ({
       group: d.entity,
-      values: TYPE_KEYS.map(k => ({ key: k, value: d[k] }))
+      values: KEYS.map(k => ({ key: k, value: d[k] }))
     }));
 
-    drawGroupedBar("#grouped-2023", tidy, {
-      keys: TYPE_KEYS,
-      width: 940,
-      height: 420
-    });
-  }
-
+  drawGroupedBar("#grouped-2023", groupedRows, {
+    keys: KEYS,
+    width: 980,
+    height: 440,
+    title: "Conflict deaths by type (selected countries, 2023)"
+  });
 }).catch(err => {
-  console.error(err);
+  console.error("Failed to load CSV:", err);
 });
 
 
-/* =======================================================
-   Reusable components
-   ======================================================= */
+// ===================== Components =====================
 
-/**
- * Horizontal bar chart for { name, value }[]
- */
-function drawBar(selector, data, opts = {}){
-  const {
-    width = 900,
-    height = 360,
-    margin = { top: 6, right: 24, bottom: 36, left: 170 },
-    xFormat = d3.format(","),
-    label = ""
-  } = opts;
+// Horizontal bar
+function drawBar(sel, data, { width=900, height=360, margin={top:8,right:24,bottom:36,left:180}, xFormat=d3.format(","), title="" } = {}) {
+  const wrap = d3.select(sel);
+  wrap.selectAll("*").remove();
 
-  const svg = d3.select(selector).append("svg")
-    .attr("width", width).attr("height", height);
+  if (title) wrap.append("div").attr("class", "chart-title").text(title);
 
+  const svg = wrap.append("svg").attr("width", width).attr("height", height);
   const x = d3.scaleLinear()
     .domain([0, d3.max(data, d => d.value) || 1]).nice()
     .range([margin.left, width - margin.right]);
-
   const y = d3.scaleBand()
     .domain(data.map(d => d.name))
     .range([margin.top, height - margin.bottom])
     .padding(0.15);
 
-  // axes
   svg.append("g")
-    .attr("class", "axis")
     .attr("transform", `translate(0,${height - margin.bottom})`)
+    .attr("class", "axis")
     .call(d3.axisBottom(x).ticks(6).tickFormat(xFormat));
 
   svg.append("g")
-    .attr("class", "axis")
     .attr("transform", `translate(${margin.left},0)`)
+    .attr("class", "axis")
     .call(d3.axisLeft(y));
 
-  // bars
-  const g = svg.append("g");
-  g.selectAll("rect")
+  svg.append("g").selectAll("rect")
     .data(data)
     .join("rect")
-    .attr("x", x(0))
-    .attr("y", d => y(d.name))
-    .attr("height", y.bandwidth())
-    .attr("width", d => x(d.value) - x(0))
-    .attr("fill", "#8aa6ff")
-    .on("mousemove", (event,d) => tip.show(`<b>${d.name}</b><br>${xFormat(d.value)} ${label}`, [event.clientX, event.clientY]))
-    .on("mouseleave", tip.hide);
+      .attr("x", x(0))
+      .attr("y", d => y(d.name))
+      .attr("width", d => x(d.value) - x(0))
+      .attr("height", y.bandwidth())
+      .attr("fill", "#8aa6ff");
 
   // value labels
-  svg.append("g").selectAll("text.val")
+  const fmt = xFormat;
+  svg.append("g").selectAll("text.value")
     .data(data)
     .join("text")
-    .attr("class", "val")
-    .attr("x", d => x(d.value) + 6)
-    .attr("y", d => (y(d.name) ?? 0) + y.bandwidth()/2 + 4)
-    .attr("fill", "#6b7280")
-    .attr("font-size", 11)
-    .text(d => xFormat(d.value));
+      .attr("class", "value")
+      .attr("x", d => x(d.value) + 4)
+      .attr("y", d => y(d.name) + y.bandwidth()/2 + 4)
+      .text(d => fmt(d.value))
+      .style("font-size", "12px")
+      .style("fill", "#555");
 }
 
-/**
- * Grouped bar chart
- * rows: [{ group: "Country", values: [{key:"Interstate", value:...}, ...] }, ...]
- */
-function drawGroupedBar(selector, rows, opts = {}){
-  const {
-    keys = [],
-    width = 960,
-    height = 420,
-    margin = { top: 10, right: 20, bottom: 70, left: 56 }
-  } = opts;
+// Grouped bar
+const TYPE_COLORS = d3.scaleOrdinal()
+  .domain(["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"])
+  .range(["#6c8ae4","#f28e2b","#edc948","#59a14f","#e15759"]);
 
-  const svg = d3.select(selector).append("svg")
-    .attr("width", width).attr("height", height);
+function drawGroupedBar(sel, rows, { keys, width=980, height=420, margin={top:10,right:20,bottom:70,left:56}, title="" } = {}) {
+  const wrap = d3.select(sel);
+  wrap.selectAll("*").remove();
 
+  if (!rows.length) {
+    wrap.append("div").attr("class", "chart-note")
+      .text("No data available for the selected year/countries.");
+    return;
+  }
+
+  if (title) wrap.append("div").attr("class", "chart-title").text(title);
+
+  const svg = wrap.append("svg").attr("width", width).attr("height", height);
   const groups = rows.map(d => d.group);
   const flat = rows.flatMap(d => d.values.map(v => ({ group: d.group, key: v.key, value: v.value })));
 
-  const x0 = d3.scaleBand().domain(groups).range([margin.left, width - margin.right]).padding(0.22);
+  const x0 = d3.scaleBand().domain(groups).range([margin.left, width - margin.right]).padding(0.2);
   const x1 = d3.scaleBand().domain(keys).range([0, x0.bandwidth()]).padding(0.08);
-  const y  = d3.scaleLinear().domain([0, d3.max(flat, d => d.value) || 1]).nice()
-               .range([height - margin.bottom, margin.top]);
+  const y = d3.scaleLinear().domain([0, d3.max(flat, d => d.value) || 1]).nice()
+    .range([height - margin.bottom, margin.top]);
 
-  // axes
-  svg.append("g").attr("class","axis")
+  svg.append("g")
     .attr("transform", `translate(0,${height - margin.bottom})`)
-    .call(d3.axisBottom(x0))
-    .selectAll("text")
-    .attr("transform", "rotate(-18)")
-    .style("text-anchor","end");
+    .attr("class", "axis")
+    .call(d3.axisBottom(x0));
 
-  svg.append("g").attr("class","axis")
-    .attr("transform", `translate(${margin.left},0)`)
-    .call(d3.axisLeft(y).ticks(5));
-
-  // bars
-  const g = svg.append("g");
-  g.selectAll("g")
+  svg.selectAll("g.group")
     .data(rows)
     .join("g")
-    .attr("transform", d => `translate(${x0(d.group)},0)`)
+      .attr("class", "group")
+      .attr("transform", d => `translate(${x0(d.group)},0)`)
     .selectAll("rect")
     .data(d => d.values)
     .join("rect")
-    .attr("x", d => x1(d.key))
-    .attr("y", d => y(d.value))
-    .attr("width", x1.bandwidth())
-    .attr("height", d => y(0) - y(d.value))
-    .attr("fill", d => TYPE_COLORS(d.key))
-    .on("mousemove", (event,d) => tip.show(`<b>${d.key}</b><br>${d.value.toLocaleString()}`, [event.clientX, event.clientY]))
-    .on("mouseleave", tip.hide);
+      .attr("x", d => x1(d.key))
+      .attr("y", d => y(d.value))
+      .attr("width", x1.bandwidth())
+      .attr("height", d => y(0) - y(d.value))
+      .attr("fill", d => TYPE_COLORS(d.key));
 
-  // legend
-  const legend = d3.select(selector).append("div").attr("class","legend");
-  keys.forEach(k => legend.append("span").html(`<i style="background:${TYPE_COLORS(k)}"></i>${k}`));
+  svg.append("g")
+    .attr("transform", `translate(${margin.left},0)`)
+    .attr("class", "axis")
+    .call(d3.axisLeft(y).ticks(5));
+
+  // Legend
+  const legend = wrap.append("div").attr("class", "legend");
+  keys.forEach(k => {
+    legend.append("span").html(`<i style="background:${TYPE_COLORS(k)}"></i>${k}`);
+  });
 }
