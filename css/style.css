@@ -1,12 +1,52 @@
-body {
-  font-family: Arial, sans-serif;
-  margin: 40px;
-  background-color: #f9f9f9;
-  color: #333;
+:root{
+  --bg:#f7f7f7;
+  --text:#222;
+  --muted:#666;
+  --accent:#c45a3b;
+  --card:#ffffff;
+  --grid:#ddd;
 }
 
-h1 {
-  color: #c45a3b;
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Arial, sans-serif;
+  color:var(--text);
+  background:var(--bg);
+  line-height:1.5;
 }
 
-p { max-width: 70ch; }
+.container{max-width:1000px;margin:0 auto;padding:32px 20px}
+
+h1{font-size:2.2rem;margin:.2rem 0 0.6rem;color:var(--accent)}
+h2{font-size:1.6rem;margin:2rem 0 .25rem}
+h3{font-size:1.1rem;margin:0 0 10px}
+
+.lead{max-width:70ch;color:var(--muted);margin:0}
+
+.chart-card{
+  background:var(--card);
+  border:1px solid #e9e9e9;
+  border-radius:10px;
+  padding:16px 16px 6px;
+  margin:16px 0 24px;
+  box-shadow:0 1px 2px rgba(0,0,0,.03);
+}
+
+svg{font-size:12px}
+.axis path, .axis line{stroke:#888; shape-rendering:crispEdges}
+.grid line{stroke:var(--grid)}
+
+.source{color:var(--muted);font-size:.9rem}
+.footer{border-top:1px solid #e6e6e6; color:var(--muted); margin-top:24px}
+
+/* waffle legend */
+.legend{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 2px}
+.legend span{display:inline-flex;align-items:center;gap:6px;font-size:.9rem;color:#444}
+.legend i{display:inline-block;width:12px;height:12px;border-radius:2px;background:#ccc}
+
+/* small screens */
+@media (max-width:640px){
+  .container{padding:24px 14px}
+  h1{font-size:1.8rem}
+}
