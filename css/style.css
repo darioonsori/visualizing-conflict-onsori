@@ -1,98 +1,62 @@
+/* --- Base layout --- */
 :root{
-  --fg:#1f2937;
-  --muted:#6b7280;
-  --accent:#c45a3b;
-  --card:#ffffff;
-  --bg:#f6f7f9;
-  --axis:#9aa3af;
-  --grid:#e5e7eb;
+  --bg: #f5f6f7;
+  --fg: #1f2937;
+  --muted: #6b7280;
+  --brand: #c45a3b;
+  --card: #ffffff;
+  --axis: #9aa4b2;
 }
 
-*{ box-sizing:border-box; }
+*{ box-sizing: border-box; }
+html,body{ margin:0; padding:0; background:var(--bg); color:var(--fg); }
+body{ font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; line-height:1.45; }
 
-html,body{
-  margin:0;
-  padding:0;
-  color:var(--fg);
-  background:var(--bg);
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
-  line-height:1.5;
-}
+.container{ max-width: 980px; margin: 0 auto; padding: 24px 20px; }
 
-.container{
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 28px 20px;
-}
+h1{ font-size: 28px; margin: 4px 0 6px; color: var(--brand); }
+.subtitle{ color: var(--muted); margin-top: 0; }
 
-h1{
-  margin: 0 0 6px 0;
-  font-size: clamp(24px, 3vw, 36px);
-  color: var(--accent);
-}
-.subtitle{
-  margin-top: 0;
-  color: var(--muted);
-}
+h2{ font-size: 20px; margin: 28px 0 8px; }
+h3{ font-size: 16px; margin: 0 0 10px; }
 
-h2{
-  margin: 28px 0 8px;
-  font-size: clamp(18px, 2.2vw, 22px);
-}
+p{ margin: 8px 0 12px; }
+.note{ font-size: 12px; color: var(--muted); margin-top: 10px; }
 
-h3{
-  margin: 0 0 12px;
-  font-size: clamp(16px, 2vw, 18px);
-}
+.footer{ padding-top: 8px; padding-bottom: 36px; color: var(--muted); }
 
-.section-note{
-  color: var(--muted);
-  margin-bottom: 16px;
-}
-
-.card{
+/* --- Chart cards --- */
+.chart-card{
   background: var(--card);
   border-radius: 10px;
-  padding: 16px;
-  box-shadow: 0 1px 2px rgba(0,0,0,.06);
-  margin: 14px 0 28px;
+  padding: 14px 16px 10px;
+  margin: 14px 0 22px;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.02), 0 4px 16px rgba(0,0,0,0.04);
 }
 
-.chart{
-  width:100%;
-  overflow-x:auto;
-}
+/* --- SVG and axes --- */
+svg{ display:block; width:100%; height:auto; }
+.axis text{ fill: var(--axis); font-size: 12px; }
+.axis line, .axis path{ stroke: #e5e7eb; }
 
-.chart-note{
-  color: var(--muted);
-  font-size: 12px;
-  margin-top: 8px;
+/* --- Legend --- */
+.legend{
+  display:flex; flex-wrap:wrap; gap:10px; font-size:12px; margin-top:8px;
 }
+.legend span{ display:flex; align-items:center; gap:6px; }
+.legend i{ width:10px; height:10px; display:inline-block; border-radius:2px; }
 
-.footer{
-  border-top: 1px solid var(--grid);
-  color: var(--muted);
-}
-
-/* SVG axes/labels */
-.axis text{
-  fill: var(--fg);
-  font-size: 12px;
-}
-.axis path, .axis line{
-  stroke: var(--axis);
-}
-
-/* Tooltip (ready if you add interactions later) */
+/* --- Tooltip --- */
 .tooltip{
-  position: absolute;
+  position: fixed;
   pointer-events: none;
   background: #111827;
-  color: #fff;
-  font-size: 12px;
+  color: white;
   padding: 6px 8px;
   border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0,0,0,.18);
+  font-size: 12px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
   opacity: 0;
   transform: translate(-50%, -120%);
+  transition: opacity .12s ease;
 }
