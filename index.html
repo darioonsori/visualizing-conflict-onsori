@@ -2,16 +2,64 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Visualizing Conflict and Human Suffering through Data</title>
-  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/style.css"/>
 </head>
 <body>
-  <h1>Visualizing Conflict and Human Suffering through Data</h1>
-  <p>This website will explore how data visualization can represent global conflicts and humanitarian issues.</p>
+  <header class="container">
+    <h1>Visualizing Conflict and Human Suffering through Data</h1>
+    <p class="lead">
+      This website explores how data visualization can represent global conflicts and humanitarian issues.
+    </p>
+  </header>
 
+  <main class="container">
+    <section id="comparing">
+      <h2>Comparing Categories</h2>
+      <p>
+        Charts comparing conflict deaths by country and conflict type (1989–2024). Data from the
+        Uppsala Conflict Data Program via Our World in Data.
+      </p>
+
+      <div class="chart-card">
+        <h3>Top 10 countries by conflict deaths in 2024</h3>
+        <div id="bar-top10-2024"></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Conflict deaths by type (selected countries, 2024)</h3>
+        <div id="grouped-2024"></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Global conflict deaths by type and year</h3>
+        <div id="heatmap-global"></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Share of conflict types (World, % by year)</h3>
+        <div id="stacked-100"></div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Composition of conflict deaths by type (World, 2024)</h3>
+        <div id="waffle-2024"></div>
+      </div>
+
+      <p class="source">
+        Source: Uppsala Conflict Data Program (UCDP), geoBoundaries — processed by Our World in Data.
+      </p>
+    </section>
+  </main>
+
+  <footer class="container footer">
+    <p>© 2025 Dario Onsori — Data Visualization (WS 2025/2026)</p>
+  </footer>
+
+  <!-- D3 -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
+  <!-- Your code -->
   <script src="js/script.js"></script>
 </body>
 </html>
-
