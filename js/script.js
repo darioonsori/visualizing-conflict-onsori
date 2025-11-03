@@ -150,9 +150,17 @@ const TYPE_COLORS = d3.scaleOrdinal()
   .domain(["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"])
   .range(["#6c8ae4","#f28e2b","#edc948","#59a14f","#e15759"]);
 
-function drawGroupedBar(sel, rows, { keys, width=980, height=420, margin={top:10,right:20,bottom:70,left:56}, title="" } = {}) {
+function drawGroupedBar(sel, rows, {
+  keys,
+  width=980,
+  height=440,
+  margin={top:10,right:20,bottom:70,left:64},
+  title=""
+} = {}) {
   const wrap = d3.select(sel);
   wrap.selectAll("*").remove();
+
+  if (title) wrap.append("div").attr("class", "chart-title").text(title);
 
   if (!rows.length) {
     wrap.append("div").attr("class", "chart-note")
@@ -160,28 +168,41 @@ function drawGroupedBar(sel, rows, { keys, width=980, height=420, margin={top:10
     return;
   }
 
-  if (title) wrap.append("div").attr("class", "chart-title").text(title);
-
   const svg = wrap.append("svg").attr("width", width).attr("height", height);
   const groups = rows.map(d => d.group);
   const flat = rows.flatMap(d => d.values.map(v => ({ group: d.group, key: v.key, value: v.value })));
 
   const x0 = d3.scaleBand().domain(groups).range([margin.left, width - margin.right]).padding(0.2);
   const x1 = d3.scaleBand().domain(keys).range([0, x0.bandwidth()]).padding(0.08);
-  const y = d3.scaleLinear().domain([0, d3.max(flat, d => d.value) || 1]).nice()
+  const y = d3.scaleLinear()
+    .domain([0, d3.max(flat, d => d.value) || 1]).nice()
     .range([height - margin.bottom, margin.top]);
+
+  // gridlines orizzontali leggere per la lettura dei valori
+  svg.append("g")
+    .attr("class", "grid")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(d3.axisLeft(y).ticks(5).tickSize(- (width - margin.left - margin.right)).tickFormat(""))
+    .selectAll("line").attr("stroke", "#e9ecef");
 
   svg.append("g")
     .attr("transform", `translate(0,${height - margin.bottom})`)
     .attr("class", "axis")
     .call(d3.axisBottom(x0));
 
-  svg.selectAll("g.group")
+  svg.append("g")
+    .attr("transform", `translate(${margin.left},0)`)
+    .attr("class", "axis")
+    .call(d3.axisLeft(y).ticks(5).tickFormat(d3.format(",")));
+
+  // barre raggruppate
+  const gGroup = svg.selectAll("g.group")
     .data(rows)
     .join("g")
-      .attr("class", "group")
-      .attr("transform", d => `translate(${x0(d.group)},0)`)
-    .selectAll("rect")
+    .attr("class", "group")
+    .attr("transform", d => `translate(${x0(d.group)},0)`);
+
+  gGroup.selectAll("rect")
     .data(d => d.values)
     .join("rect")
       .attr("x", d => x1(d.key))
@@ -190,12 +211,7 @@ function drawGroupedBar(sel, rows, { keys, width=980, height=420, margin={top:10
       .attr("height", d => y(0) - y(d.value))
       .attr("fill", d => TYPE_COLORS(d.key));
 
-  svg.append("g")
-    .attr("transform", `translate(${margin.left},0)`)
-    .attr("class", "axis")
-    .call(d3.axisLeft(y).ticks(5));
-
-  // Legend
+  // legenda compatta
   const legend = wrap.append("div").attr("class", "legend");
   keys.forEach(k => {
     legend.append("span").html(`<i style="background:${TYPE_COLORS(k)}"></i>${k}`);
