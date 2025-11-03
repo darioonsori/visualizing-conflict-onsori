@@ -9,9 +9,9 @@ const DATA_PATH = "data/conflict_deaths_by_type.csv"; // <-- path esatto come ne
 const SNAPSHOT_YEAR = 2023;                            // <-- cambia se vuoi un altro anno
 
 // Ensure container exists (defensive: if missing in HTML, create it)
-let mount = d3.select("#bar-top10-2023");
+const mount = d3.select("#bar-top10-2023");
 if (mount.empty()) {
-  mount = d3.select("body").append("div").attr("id", "bar-top10-2023");
+  console.error("Missing #bar-top10-2023 in the HTML.");
 }
 
 /* ---------- Helpers ---------- */
