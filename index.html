@@ -2,64 +2,102 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Visualizing Conflict and Human Suffering through Data</title>
-  <link rel="stylesheet" href="css/style.css"/>
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/style.css" />
+
+  <!-- D3 -->
+  <script defer src="https://d3js.org/d3.v7.min.js"></script>
+  <!-- Your code -->
+  <script defer src="js/script.js"></script>
 </head>
 <body>
-  <header class="container">
-    <h1>Visualizing Conflict and Human Suffering through Data</h1>
-    <p class="lead">
-      This website explores how data visualization can represent global conflicts and humanitarian issues.
-    </p>
+  <header class="site-header">
+    <div class="container">
+      <h1>Visualizing Conflict and Human Suffering through Data</h1>
+      <p class="subtitle">Comparing categories with open data (OWID / UCDP)</p>
+    </div>
   </header>
 
-  <main class="container">
-    <section id="comparing">
-      <h2>Comparing Categories</h2>
+  <main>
+    <!-- HOME — Section 1 (introduction) -->
+    <section class="container section">
+      <h2>Introduction</h2>
       <p>
-        Charts comparing conflict deaths by country and conflict type (1989–2024). Data from the
-        Uppsala Conflict Data Program via Our World in Data.
+        This website explores how data visualization can represent global
+        conflicts and humanitarian issues. Using open data from
+        <em>Our World in Data</em> and the Uppsala Conflict Data Program, we
+        compare categories with multiple encodings to surface different
+        perspectives on the same underlying facts.
+      </p>
+    </section>
+
+    <!-- NEW SECTION — Comparing Categories -->
+    <section class="container section">
+      <h2>Comparing Categories</h2>
+      <p class="section-lead">
+        Charts comparing conflict-related deaths by country and conflict type.
+        Snapshot year: <strong>2023</strong> (last complete year). Regional
+        aggregates are excluded from country rankings.
       </p>
 
-      <div class="chart-card">
-        <h3>Top 10 countries by conflict deaths in 2024</h3>
-        <div id="bar-top10-2024"></div>
-      </div>
+      <!-- 1) Bar chart -->
+      <article class="card">
+        <h3>Top 10 countries by conflict deaths in 2023</h3>
+        <div id="bar-top10-2023" class="chart"></div>
+        <p class="note">
+          Source: UCDP via Our World in Data. Values are absolute counts.
+        </p>
+      </article>
 
-      <div class="chart-card">
-        <h3>Conflict deaths by type (selected countries, 2024)</h3>
-        <div id="grouped-2024"></div>
-      </div>
+      <!-- 2) Grouped bar -->
+      <article class="card">
+        <h3>Conflict-type breakdown (selected countries), 2023</h3>
+        <div id="grouped-2023" class="chart"></div>
+        <p class="note">
+          Countries: Ukraine, Syria, Yemen, Democratic Republic of Congo, Afghanistan.
+        </p>
+      </article>
 
-      <div class="chart-card">
-        <h3>Global conflict deaths by type and year</h3>
-        <div id="heatmap-global"></div>
-      </div>
+      <!-- 3) Heatmap -->
+      <article class="card">
+        <h3>World — deaths by conflict type over time</h3>
+        <div id="heatmap-global" class="chart"></div>
+        <p class="note">
+          Rows are conflict types; columns are years.
+        </p>
+      </article>
 
-      <div class="chart-card">
-        <h3>Share of conflict types (World, % by year)</h3>
-        <div id="stacked-100"></div>
-      </div>
+      <!-- 4) 100% stacked -->
+      <article class="card">
+        <h3>World — share of deaths by conflict type</h3>
+        <div id="stacked-100" class="chart"></div>
+        <p class="note">
+          Each bar sums to 100%: the relative contribution of each conflict type.
+        </p>
+      </article>
 
-      <div class="chart-card">
-        <h3>Composition of conflict deaths by type (World, 2024)</h3>
-        <div id="waffle-2024"></div>
-      </div>
-
-      <p class="source">
-        Source: Uppsala Conflict Data Program (UCDP), geoBoundaries — processed by Our World in Data.
-      </p>
+      <!-- 5) Waffle chart -->
+      <article class="card">
+        <h3>World — composition by conflict type in 2023</h3>
+        <div id="waffle-2023" class="chart"></div>
+        <p class="note">
+          Each square represents ~1% of total deaths in 2023.
+        </p>
+      </article>
     </section>
   </main>
 
-  <footer class="container footer">
-    <p>© 2025 Dario Onsori — Data Visualization (WS 2025/2026)</p>
+  <footer class="site-footer">
+    <div class="container">
+      <p>
+        Data: <a href="https://ourworldindata.org/" target="_blank" rel="noopener">Our World in Data</a> /
+        Uppsala Conflict Data Program (UCDP). This site is for educational purposes.
+      </p>
+      <p>&copy; 2025 Dario Onsori — University project.</p>
+    </div>
   </footer>
-
-  <!-- D3 -->
-  <script src="https://d3js.org/d3.v7.min.js"></script>
-  <!-- Your code -->
-  <script src="js/script.js"></script>
 </body>
 </html>
