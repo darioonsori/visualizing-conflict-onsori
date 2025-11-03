@@ -1,5 +1,5 @@
 // ====== CONFIG ======
-const DATA_PATH = "data/ConflictDataByType.csv";
+const DATA_PATH = "data/conflict_deaths_by_type.csv";
 
 // Palette discreta per i tipi (5 colori):
 const TYPE_COLORS = d3.scaleOrdinal()
