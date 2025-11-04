@@ -311,64 +311,115 @@ function drawStacked100(sel, worldRows){
 }
 
 // 5) Waffle (World 2023)
-function drawWaffle(sel, worldRows, year){
+function drawWaffle(sel, worldRows, year) {
   const keys = ["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"];
-  const row = worldRows.find(r => r.year === year);
-  if (!row){ alertIn(sel, `No 'World' row for ${year}.`); return; }
 
-  const totals = keys.map(k => ({key:k, value: row[k] || 0}));
-  const grand = totals.reduce((s,d)=>s+d.value,0) || 1;
-  const parts = totals.map(d => ({
+  // 1) Prendi il "World" per l'anno scelto
+  const w = worldRows.find(d => d.year === year);
+  if (!w) { alertIn(sel, `No World aggregate for ${year}.`); return; }
+
+  // 2) Totali e quote
+  const totals = keys.map(k => ({ key: k, value: +w[k] || 0 }));
+  const grandTotal = d3.sum(totals, d => d.value);
+  if (!grandTotal) { alertIn(sel, `World total is zero in ${year}.`); return; }
+
+  // 3) Alloca 100 celle (10×10) secondo le proporzioni
+  //    - arrotondamento "smart": prima floor, poi distribuisci il resto
+  const raw = totals.map(d => ({
     key: d.key,
     value: d.value,
-    pct: d.value / grand
+    share: d.value / grandTotal,
+    cells: Math.floor((d.value / grandTotal) * 100)
   }));
+  let used = d3.sum(raw, d => d.cells);
+  const missing = 100 - used;
 
-  // Build 100 cells (10x10). Assign each cell to a type by cumulative share.
-  const cells = d3.range(100).map(i => {
-    const t = (i+1)/100;
-    let acc = 0, key = keys[0];
-    for (const p of parts){
-      acc += p.pct;
-      if (t <= acc){ key = p.key; break; }
+  if (missing !== 0) {
+    // ordina per parte frazionaria desc e assegna 1 cella a testa finché arrivi a 100
+    const withFrac = totals.map(d => {
+      const exact = (d.value / grandTotal) * 100;
+      return { key: d.key, frac: exact - Math.floor(exact) };
+    }).sort((a, b) => d3.descending(a.frac, b.frac));
+
+    for (let i = 0; i < Math.abs(missing); i++) {
+      const targetKey = withFrac[i % withFrac.length].key;
+      const t = raw.find(r => r.key === targetKey);
+      if (missing > 0) t.cells += 1;     // aggiungi celle mancanti
+      else if (t.cells > 0) t.cells -= 1; // togli celle in eccesso, se presenti
     }
-    return { i, key };
+    used = d3.sum(raw, d => d.cells); // (solo per debug mentale)
+  }
+
+  // 4) Costruisci il dataset delle 100 celle
+  const cells = [];
+  raw.forEach(r => {
+    for (let i = 0; i < r.cells; i++) cells.push({ key: r.key });
   });
+  // Se per qualche rounding non arriviamo a 100, riempi con la categoria più grande
+  while (cells.length < 100) {
+    const biggest = raw.slice().sort((a,b)=>d3.descending(a.value,b.value))[0].key;
+    cells.push({ key: biggest });
+  }
+  // Taglia eventuale surplus
+  if (cells.length > 100) cells.length = 100;
 
-  const size = 22, gap = 2, cols = 10, rows = 10;
-  const width = cols*size + (cols-1)*gap;
-  const height = rows*size + (rows-1)*gap;
-
-  const root = d3.select(sel).html("").append("div").attr("class","waffle-wrap");
-  const svg = root.append("svg")
-    .attr("class","waffle")
+  // 5) Layout e SVG
+  const width = 900, height = 320;
+  const margin = { top: 18, right: 18, bottom: 56, left: 18 };
+  const svg = d3.select(sel).html("").append("svg")
     .attr("width", width)
-    .attr("height", height)
-    .attr("role","img")
-    .attr("aria-label",`Waffle chart, ${year} composition of conflict deaths by type`);
+    .attr("height", height);
 
-  svg.selectAll("rect.cell").data(cells).join("rect")
-    .attr("class","cell")
-    .attr("rx", 3).attr("ry", 3)
-    .attr("width", size).attr("height", size)
-    .attr("x", d => (d.i % cols) * (size+gap))
-    .attr("y", d => Math.floor(d.i / cols) * (size+gap))
-    .attr("fill", d => TYPE_COLORS(d.key))
-    .on("mousemove",(ev,d)=>{
-      const p = parts.find(x => x.key===d.key);
-      tip.style("opacity",1).html(`<strong>${d.key}</strong><br/>${(p.pct*100).toFixed(1)}%`)
-         .style("left",(ev.pageX)+"px").style("top",(ev.pageY)+"px");
-    }).on("mouseleave",()=> tip.style("opacity",0));
+  const cols = 10, rows = 10;
+  const gap = 4;            // spazio tra celle
+  const cellSize = Math.min(
+    Math.floor((width  - margin.left - margin.right  - gap * (cols - 1)) / cols),
+    Math.floor((height - margin.top  - margin.bottom - gap * (rows - 1)) / rows)
+  );
+  const gridW = cellSize * cols + gap * (cols - 1);
+  const gridH = cellSize * rows + gap * (rows - 1);
+  const gridX = margin.left + Math.floor((width  - margin.left - margin.right  - gridW) / 2);
+  const gridY = margin.top  + 10; // un filo di respiro sotto al titolo card
 
-  // Legend with percentages
-  const panel = root.append("div").attr("class","waffle-info");
-  const legend = panel.append("div").attr("class","legend");
-  parts.forEach(p=>{
-    const item = legend.append("span").attr("class","pill");
-    item.append("span").attr("class","swatch").style("background", TYPE_COLORS(p.key));
-    item.append("span").text(`${p.key} — ${(p.pct*100).toFixed(1)}%`);
+  // 6) Render celle in ordine riga→colonna (o viceversa a tua scelta)
+  const g = svg.append("g").attr("transform", `translate(${gridX},${gridY})`);
+  g.selectAll("rect")
+    .data(cells)
+    .join("rect")
+      .attr("x", (_, i) => (i % cols) * (cellSize + gap))
+      .attr("y", (_, i) => Math.floor(i / cols) * (cellSize + gap))
+      .attr("width",  cellSize)
+      .attr("height", cellSize)
+      .attr("rx", 3).attr("ry", 3)
+      .attr("fill", d => TYPE_COLORS(d.key))
+      .on("mousemove", (ev, d) => {
+        const countForKey = totals.find(t => t.key === d.key)?.value || 0;
+        const sharePct = d3.format(".0%")(countForKey / grandTotal);
+        tip.style("opacity", 1)
+           .html(`<strong>${d.key}</strong><br/>${d3.format(",")(countForKey)} deaths<br/>${sharePct} of ${year}`)
+           .style("left", (ev.pageX) + "px")
+           .style("top",  (ev.pageY) + "px");
+      })
+      .on("mouseleave", () => tip.style("opacity", 0));
+
+  // 7) Legenda “pill”
+  const legend = d3.select(sel).append("div").attr("class", "legend");
+  TYPE_COLORS.domain().forEach(k => {
+    const item = legend.append("span").attr("class", "pill");
+    item.append("span").attr("class", "swatch").style("background", TYPE_COLORS(k));
+    item.append("span").text(k);
   });
-  panel.append("div").attr("class","waffle-note")
-    .text("10×10 grid = 100 squares. Each square represents ~1% of total deaths in the selected year.");
+
+  // 8) Caption
+  d3.select(sel).append("div").attr("class", "caption")
+    .text(`Waffle chart: 10×10 grid = 100 squares. Each square ≈ 1% of global deaths in ${year} (UCDP — “World” totals). Colors encode UCDP conflict types.`);
 }
-}
+
+// (richiamo – assicurati che queste due righe esistano una sola volta nel file)
+d3.select("#year-waffle").text(SNAPSHOT_YEAR);
+drawWaffle("#waffle", 
+  // passa solo World rows se non l'hai già fatto a monte:
+  // se nel tuo codice precedente hai già `worldOnly`, riutilizzalo.
+  (typeof worldOnly !== "undefined" ? worldOnly : []),
+  SNAPSHOT_YEAR
+);
