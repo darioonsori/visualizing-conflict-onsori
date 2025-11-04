@@ -247,9 +247,9 @@ function drawWorldHeatmap(sel, worldRows){
   svg.append("rect").attr("x",lx).attr("y",ly).attr("width",legendW).attr("height",legendH).attr("fill","url(#hm-grad)");
   svg.append("text")
     .attr("x", lx + legendW/2)
-    .attr("y", ly - 6)
+    .attr("y", ly - 12)
     .attr("text-anchor", "middle")
-    .attr("fill", "#555")
+    .attr("fill", "#333")
     .attr("font-size", "12px")
     .text("Number of deaths (log scale)");
   const s = d3.scaleLinear().domain([0,max]).range([lx, lx+legendW]);
@@ -273,7 +273,7 @@ function drawStacked100(sel, worldRows){
   const width=900, height=300, margin={top:10,right:20,bottom:40,left:56};
   const svg = d3.select(sel).html("").append("svg").attr("width",width).attr("height",height);
 
-  const x = d3.scaleBand().domain(data.map(d=>d.year)).range([margin.left, width-margin.right]).padding(0.08);
+  const x = d3.scaleBand().domain(data.map(d=>d.year)).range([margin.left, width-margin.right]).padding(0.1);
   const y = d3.scaleLinear().domain([0,1]).range([height-margin.bottom, margin.top]);
 
   const stack = d3.stack().keys(keys).offset(d3.stackOffsetExpand)(data);
