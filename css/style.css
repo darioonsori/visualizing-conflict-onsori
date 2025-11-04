@@ -1,9 +1,3 @@
-/* =========================================================
-   Minimal, clean styles for course submission
-   - Keep neutral palette, strong readability
-   - Cards host the charts; captions and legends are clear
-   ========================================================= */
-
 :root{
   --bg: #f5f6f8;
   --paper: #ffffff;
