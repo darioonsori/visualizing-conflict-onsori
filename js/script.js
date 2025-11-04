@@ -239,23 +239,36 @@ function drawWorldHeatmap(sel, worldRows){
     .attr("transform",`translate(${margin.left},0)`)
     .call(d3.axisLeft(y).tickSize(0));
 
-  // legend gradient + title
-  const legendW=220, legendH=10, lx=width-legendW-18, ly=margin.top-18;
-  const defs = svg.append("defs"); const grad = defs.append("linearGradient").attr("id","hm-grad");
-  grad.append("stop").attr("offset","0%").attr("stop-color", color(0));
-  grad.append("stop").attr("offset","100%").attr("stop-color", color(max));
-  svg.append("rect").attr("x",lx).attr("y",ly).attr("width",legendW).attr("height",legendH).attr("fill","url(#hm-grad)");
-  svg.append("text")
-    .attr("x", lx + legendW/2)
-    .attr("y", ly - 12)
-    .attr("text-anchor", "middle")
-    .attr("fill", "#333")
-    .attr("font-size", "12px")
-    .text("Number of deaths (log scale)");
-  const s = d3.scaleLinear().domain([0,max]).range([lx, lx+legendW]);
-  svg.append("g").attr("class","axis").attr("transform",`translate(0,${ly+legendH})`)
-    .call(d3.axisBottom(s).ticks(3).tickFormat(d3.format(",")));
-}
+// legend gradient + title
+const legendW = 220, legendH = 10, lx = width - legendW - 18, ly = margin.top - 18;
+const defs = svg.append("defs");
+const grad = defs.append("linearGradient").attr("id", "hm-grad");
+grad.append("stop").attr("offset", "0%").attr("stop-color", color(0));
+grad.append("stop").attr("offset", "100%").attr("stop-color", color(max));
+
+// gradient bar
+svg.append("rect")
+  .attr("x", lx)
+  .attr("y", ly)
+  .attr("width", legendW)
+  .attr("height", legendH)
+  .attr("fill", "url(#hm-grad)");
+
+// legend axis
+const s = d3.scaleLinear().domain([0, max]).range([lx, lx + legendW]);
+svg.append("g")
+  .attr("class", "axis")
+  .attr("transform", `translate(0,${ly + legendH})`)
+  .call(d3.axisBottom(s).ticks(3).tickFormat(d3.format(",")));
+
+// improved title position
+svg.append("text")
+  .attr("x", lx - 10)                // spostata più a sinistra
+  .attr("y", ly - 10)                // più in alto rispetto alla barra
+  .attr("text-anchor", "start")      // allineata a sinistra
+  .attr("fill", "#2d2d2d")           // colore più contrastato
+  .attr("font-size", "12px")
+  .text("Number of deaths (log scale)");
 
 // 4) 100% stacked bar (World shares by year)
 function drawStacked100(sel, worldRows){
