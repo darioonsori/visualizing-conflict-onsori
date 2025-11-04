@@ -59,11 +59,9 @@ d3.csv(DATA_PATH, d3.autoType).then(raw => {
     .slice(0, 10)
     .map(d => ({ name: d.entity, value: d.total }));
 
-  drawBar("#bar-top10-2023", top10, {
-    width: 980,
-    height: 400,
-    title: `Countries with the highest conflict-related deaths in ${SNAPSHOT_YEAR} (Top 10)`
-  });
+drawBar("#bar-top10-2023", top10, {
+  width: 980, height: 400, title: ""   // <-- niente titolo interno
+});
 
   // ========== 2) GROUPED BAR ==========
   const KEYS = ["Interstate", "Intrastate", "Extrasystemic", "Non-state", "One-sided"];
@@ -82,10 +80,7 @@ d3.csv(DATA_PATH, d3.autoType).then(raw => {
     }));
 
   drawGroupedBar("#grouped-2023", groupedRows, {
-    keys: KEYS,
-    width: 980,
-    height: 460,
-    title: `Conflict deaths by type (selected countries, ${SNAPSHOT_YEAR})`
+  keys: KEYS, width: 980, height: 460, title: "" 
   });
 });
 
