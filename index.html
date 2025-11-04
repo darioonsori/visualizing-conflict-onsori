@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Visualizing Conflict and Human Suffering through Data</title>
   <link rel="stylesheet" href="css/style.css"/>
@@ -29,9 +29,9 @@
         Regional aggregates are excluded from country rankings.
       </p>
 
-      <!-- Card 1: Top-10 bar -->
+      <!-- Card 1 -->
       <article class="card" aria-labelledby="card1-title">
-        <h3 id="card1-title">Countries with the highest conflict-related deaths in <span id="year-top"></span> (Top 10)</h3>
+        <h3 id="card1-title">Countries with the highest conflict-related deaths in <span id="year-top">…</span> (Top 10)</h3>
         <div id="bar-top10"></div>
         <p class="note">
           Horizontal bars compare absolute totals. Values are counts of deaths (combatants and civilians) during ongoing armed conflicts.
@@ -39,34 +39,33 @@
         </p>
       </article>
 
-      <!-- Card 2: Grouped bar -->
+      <!-- Card 2 -->
       <article class="card" aria-labelledby="card2-title">
-        <h3 id="card2-title">Conflict deaths by type (selected countries, <span id="year-grouped"></span>)</h3>
+        <h3 id="card2-title">Conflict deaths by type (selected countries, <span id="year-grouped">…</span>)</h3>
         <div id="grouped"></div>
         <p class="note">
-          Bars are grouped by country; color encodes conflict type (UCDP categories).
-          Countries are filtered by valid ISO3 code; regional aggregates and “World” are excluded.
+          Bars are grouped by country; color encodes conflict type (UCDP categories). Countries are filtered by valid ISO3 code;
+          regional aggregates and “World” are excluded.
         </p>
       </article>
 
-      <!-- Card 3: Heatmap (World only) -->
+      <!-- Card 3 -->
       <article class="card" aria-labelledby="card3-title">
         <h3 id="card3-title">Global conflict deaths by type and year (World)</h3>
         <div id="heatmap"></div>
         <p class="note">
           Heatmap of “World” totals by conflict type and year. Color intensity reflects absolute counts (UCDP).
-          This view includes no country filtering because it intentionally uses the global aggregate.
+          This view intentionally uses the global aggregate.
         </p>
       </article>
     </section>
   </main>
 
   <footer class="container footer">
-    <small>© 2025 — Dario Onsori. Data: UCDP via Our World in Data (CC BY).
-      This site is for educational purposes (Data Visualization course).</small>
+    <small>© 2025 — Dario Onsori. Data: UCDP via Our World in Data (CC BY). Educational use only.</small>
   </footer>
 
   <script src="https://d3js.org/d3.v7.min.js"></script>
-  <script src="js/script.js"></script>
+  <script src="js/script.js" defer></script>
 </body>
 </html>
