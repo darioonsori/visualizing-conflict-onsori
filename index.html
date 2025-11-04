@@ -1,15 +1,17 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta charset="utf-8" />
   <title>Visualizing Conflict and Human Suffering through Data</title>
-  <link rel="stylesheet" href="css/style.css"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Comparing categories with open data (OWID / UCDP)" />
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
   <header class="container">
     <h1>Visualizing Conflict and Human Suffering through Data</h1>
-    <p class="subtitle">Comparing categories with open data (OWID / UCDP)</p>
+    <p class="sub">Comparing categories with open data (OWID / UCDP)</p>
   </header>
 
   <main class="container">
@@ -17,21 +19,21 @@
       <h2 id="intro-title">Introduction</h2>
       <p>
         This website explores how data visualization can represent global conflicts and humanitarian issues.
-        Using open data from <em>Our World in Data</em> and the Uppsala Conflict Data Program, we compare categories
-        with multiple encodings to surface different perspectives on the same underlying facts.
+        Using open data from <em>Our World in Data</em> and the Uppsala Conflict Data Program, we compare
+        categories with multiple encodings to surface different perspectives on the same underlying facts.
       </p>
     </section>
 
-    <section aria-labelledby="comp-title">
-      <h2 id="comp-title">Comparing Categories</h2>
+    <section aria-labelledby="sec-title">
+      <h2 id="sec-title">Comparing Categories</h2>
       <p>
-        Charts comparing conflict-related deaths by country and conflict type. Snapshot year and granularity are indicated per chart.
-        Regional aggregates are excluded from country rankings.
+        Charts comparing conflict-related deaths by country and conflict type. Snapshot year and granularity
+        are indicated per chart. Regional aggregates are excluded from country rankings.
       </p>
 
-      <!-- Card 1 -->
+      <!-- Card 1: Top-10 bar -->
       <article class="card" aria-labelledby="card1-title">
-        <h3 id="card1-title">Countries with the highest conflict-related deaths in <span id="year-top">…</span> (Top 10)</h3>
+        <h3 id="card1-title">Countries with the highest conflict-related deaths in <span id="year-top">—</span> (Top 10)</h3>
         <div id="bar-top10"></div>
         <p class="note">
           Horizontal bars compare absolute totals. Values are counts of deaths (combatants and civilians) during ongoing armed conflicts.
@@ -39,33 +41,55 @@
         </p>
       </article>
 
-      <!-- Card 2 -->
+      <!-- Card 2: Grouped bar -->
       <article class="card" aria-labelledby="card2-title">
-        <h3 id="card2-title">Conflict deaths by type (selected countries, <span id="year-grouped">…</span>)</h3>
+        <h3 id="card2-title">Conflict deaths by type (selected countries, <span id="year-grouped">—</span>)</h3>
         <div id="grouped"></div>
+        <div class="legend" id="legend-grouped"></div>
         <p class="note">
           Bars are grouped by country; color encodes conflict type (UCDP categories). Countries are filtered by valid ISO3 code;
           regional aggregates and “World” are excluded.
         </p>
       </article>
 
-      <!-- Card 3 -->
+      <!-- Card 3: Heatmap (World) -->
       <article class="card" aria-labelledby="card3-title">
         <h3 id="card3-title">Global conflict deaths by type and year (World)</h3>
         <div id="heatmap"></div>
+        <p class="caption">Color scale encodes absolute global counts (UCDP).</p>
         <p class="note">
           Heatmap of “World” totals by conflict type and year. Color intensity reflects absolute counts (UCDP).
           This view intentionally uses the global aggregate.
+        </p>
+      </article>
+
+      <!-- Card 4: 100% stacked bar (World shares by year) -->
+      <article class="card" aria-labelledby="card4-title">
+        <h3 id="card4-title">Share of conflict deaths by type over time (World, 100% stacked)</h3>
+        <div id="stacked100"></div>
+        <div class="legend" id="legend-stacked"></div>
+        <p class="note">
+          Each bar sums to 100% for a given year; the height of each segment shows the share of deaths attributed to that conflict type.
+          Based on UCDP “World” totals (absolute counts normalized to proportions).
+        </p>
+      </article>
+
+      <!-- Card 5: Waffle (World composition in snapshot year) -->
+      <article class="card" aria-labelledby="card5-title">
+        <h3 id="card5-title">Composition of conflict deaths by type in <span id="year-waffle">—</span> (World)</h3>
+        <div id="waffle" class="waffle-wrap"></div>
+        <div class="legend" id="legend-waffle"></div>
+        <p class="note">
+          A 10×10 waffle shows proportions in 100 tiles (≈1% each). Based on UCDP “World” totals in the snapshot year.
         </p>
       </article>
     </section>
   </main>
 
   <footer class="container footer">
-    <small>© 2025 — Dario Onsori. Data: UCDP via Our World in Data (CC BY). Educational use only.</small>
+    <p>© 2025 — Dario Onsori. Data: UCDP via Our World in Data (CC BY). Educational use only.</p>
   </footer>
 
-  <script src="https://d3js.org/d3.v7.min.js"></script>
-  <script src="js/script.js" defer></script>
+  <script src="js/script.js"></script>
 </body>
 </html>
