@@ -236,13 +236,30 @@ function drawWorldHeatmap(sel, worldRows){
 
   // legend gradient
   const legendW=200, legendH=10, lx=width-legendW-18, ly=margin.top-10;
-  const defs = svg.append("defs"); const grad = defs.append("linearGradient").attr("id","hm-grad");
+  const defs = svg.append("defs"); 
+  const grad = defs.append("linearGradient").attr("id","hm-grad");
   grad.append("stop").attr("offset","0%").attr("stop-color", color(0));
   grad.append("stop").attr("offset","100%").attr("stop-color", color(max));
-  svg.append("rect").attr("x",lx).attr("y",ly).attr("width",legendW).attr("height",legendH).attr("fill","url(#hm-grad)");
+
+  svg.append("rect")
+    .attr("x",lx).attr("y",ly)
+    .attr("width",legendW).attr("height",legendH)
+    .attr("fill","url(#hm-grad)");
+
   const s = d3.scaleLinear().domain([0,max]).range([lx, lx+legendW]);
-  svg.append("g").attr("class","axis").attr("transform",`translate(0,${ly+legendH})`)
+  svg.append("g").attr("class","axis")
+    .attr("transform",`translate(0,${ly+legendH})`)
     .call(d3.axisBottom(s).ticks(3).tickFormat(d3.format(",")));
 
-  d3.select(sel).append("div").attr("class","caption").text("Color scale encodes absolute global counts (UCDP).");
+  // <<< HERE: label above the legend >>>
+  svg.append("text")
+    .attr("x", lx + legendW / 2)
+    .attr("y", ly - 6)
+    .attr("text-anchor", "middle")
+    .attr("fill", "#555")
+    .attr("font-size", "12px")
+    .text("Number of deaths (log scale)");
+
+  d3.select(sel).append("div").attr("class","caption")
+    .text("Color scale encodes absolute global counts (UCDP).");
 }
