@@ -331,7 +331,7 @@ function drawWorldHeatmap(sel, worldRows) {
     .attr("text-anchor", "middle")
     .attr("fill", "#555")
     .attr("font-size", "12px")
-    .text("Number of deaths (log scale)"); // label now clearly visible
+    .text("Number of deaths (log scale)");
 }
 
 /* (4) 100% stacked — World, share by type over time */
