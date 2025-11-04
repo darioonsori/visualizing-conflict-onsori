@@ -303,18 +303,20 @@ function drawWorldHeatmap(sel, worldRows){
 function drawStacked100(sel, worldRows){
   if (!worldRows.length){ alertIn(sel, "No World aggregate rows found."); return; }
 
-  // Build proportion rows for each year
+  // map year -> absolute row (per tooltip con valori assoluti)
+  const absByYear = new Map(worldRows.map(r => [r.year, r]));
+
+  // Costruisco righe di proporzioni per ogni anno
   const years = worldRows.map(d=>d.year).sort((a,b)=>a-b);
   const propRows = years.map(y => {
-    const d = worldRows.find(r => r.year===y);
-    const totals = TYPE_ORDER.map(k => d[k] || 0);
-    const sum = d3.sum(totals) || 1;
+    const d = absByYear.get(y);
+    const sum = d3.sum(TYPE_ORDER, k => d[k] || 0) || 1;
     const r = { year:y };
     TYPE_ORDER.forEach(k => r[k] = (d[k]||0)/sum);
     return r;
   });
 
-  const width=900, height=360, margin={top:8,right:24,bottom:58,left:44};
+  const width=900, height=360, margin={top:8,right:24,bottom:58,left:52};
   const svg = d3.select(sel).html("").append("svg").attr("width",width).attr("height",height);
 
   const x = d3.scaleBand().domain(years).range([margin.left, width-margin.right]).padding(0.08);
@@ -323,6 +325,20 @@ function drawStacked100(sel, worldRows){
   const stack = d3.stack().keys(TYPE_ORDER).order(d3.stackOrderNone).offset(d3.stackOffsetExpand);
   const series = stack(propRows);
 
+  // griglia orizzontale
+  svg.append("g")
+    .attr("class","grid")
+    .attr("transform",`translate(0,${height-margin.bottom})`)
+    .call(d3.axisBottom(x).tickSize(-(height-margin.top-margin.bottom)).tickFormat(""))
+    .selectAll("line").attr("opacity",0); // nascondo le verticali, tengo solo l'effetto di background
+
+  svg.append("g")
+    .attr("class","grid")
+    .attr("transform",`translate(${margin.left},0)`)
+    .call(d3.axisLeft(y).tickValues([0,.25,.5,.75,1]).tickSize(-(width-margin.left-margin.right)).tickFormat(""))
+    .selectAll("line").attr("opacity",0.35);
+
+  // barre
   svg.append("g").selectAll("g").data(series).join("g")
     .attr("fill", d => TYPE_COLORS(d.key))
     .selectAll("rect").data(d => d).join("rect")
@@ -331,24 +347,26 @@ function drawStacked100(sel, worldRows){
       .attr("height", d => y(d[0]) - y(d[1]))
       .attr("width", x.bandwidth())
       .on("mousemove",(ev,d)=>{
-        // find the key by checking parent node’s fill
-        const key = d3.select(ev.currentTarget.parentNode).datum().key;
-        const pct = ((d[1]-d[0])*100);
+        const key = d3.select(ev.currentTarget.parentNode).datum().key; // nome del tipo
+        const year = d.data.year;
+        const pct  = (d[1]-d[0]) * 100;
+        const abs  = absByYear.get(year)?.[key] ?? 0;
         tip.style("opacity",1)
-          .html(`<strong>${key}</strong> — ${d.data.year}<br/>${pct.toFixed(0)}%`)
+          .html(`<strong>${key}</strong> — ${year}<br/>${pct.toFixed(0)}%  (${d3.format(",")(abs)} deaths)`)
           .style("left",(ev.pageX)+"px").style("top",(ev.pageY)+"px");
       })
       .on("mouseleave",()=> tip.style("opacity",0));
 
+  // assi
   svg.append("g").attr("class","axis")
     .attr("transform",`translate(0,${height-margin.bottom})`)
     .call(d3.axisBottom(x).tickValues(years.filter(y => y%2===0)));
 
   svg.append("g").attr("class","axis")
     .attr("transform",`translate(${margin.left},0)`)
-    .call(d3.axisLeft(y).ticks(5).tickFormat(d=>d*100+"%"));
+    .call(d3.axisLeft(y).tickValues([0,.25,.5,.75,1]).tickFormat(d3.format(".0%")));
 
-  // Legend (pills)
+  // legenda (pill) sotto il grafico
   const legend = d3.select(sel).append("div").attr("class","legend");
   TYPE_ORDER.forEach(k=>{
     const item = legend.append("span").attr("class","pill");
