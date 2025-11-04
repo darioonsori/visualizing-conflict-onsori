@@ -478,6 +478,4 @@ function drawWaffle(sel, worldRows, year) {
     item.append("span").text(k);
   });
 
-  d3.select(sel).append("div").attr("class", "caption")
-    .text(`Waffle chart: 10×10 grid = 100 squares. Each square ≈ 1% of global deaths in ${year} (UCDP “World” totals). Colors encode UCDP conflict types.`);
-}
+  }
