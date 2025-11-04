@@ -371,3 +371,4 @@ function drawWaffle(sel, worldRows, year){
   panel.append("div").attr("class","waffle-note")
     .text("10×10 grid = 100 squares. Each square represents ~1% of total deaths in the selected year.");
 }
+}
