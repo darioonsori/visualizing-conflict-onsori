@@ -1,40 +1,47 @@
-/***************************************************************
- * Visualizing Conflict — comparison charts (OWID / UCDP)
- * Datasets: data/conflict_deaths_by_type.csv
- * Charts: (1) Top-10 bar  (2) Grouped bar  (3) Heatmap
- *         (4) 100% stacked bar  (5) Waffle
- * Notes:  - Country rows detected by ISO3 code; regional aggregates removed
- *         - Robust column detection by header substrings
- ***************************************************************/
+/*******************************************************
+ * Visualizing Conflict and Human Suffering — JS bundle
+ * Datasets: UCDP via Our World in Data
+ * Charts (comparison category):
+ *  1) Top-10 barchart (absolute)            → #bar-top10
+ *  2) Grouped barchart (selected countries) → #grouped
+ *  3) Heatmap (World totals, type × year)   → #heatmap
+ *  4) 100% stacked barchart (World shares)  → #stack100
+ *  5) Waffle chart (World composition Y)    → #waffle
+ *******************************************************/
 
-const DATA_PATH = "data/conflict_deaths_by_type.csv";
+/* ---------- Config ---------- */
+const DATA_PATH = "data/conflict_deaths_by_type.csv"; // must match repo path
 const SNAPSHOT_YEAR = 2023;
-const FOCUS_COUNTRIES = ["Ukraine", "Palestine", "Sudan", "Mexico", "Burkina Faso"];
+const FOCUS_COUNTRIES = ["Ukraine","Palestine","Sudan","Mexico","Burkina Faso"];
 
-// Color scale reused across charts (UCDP types)
+const TYPE_ORDER = ["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"];
 const TYPE_COLORS = d3.scaleOrdinal()
-  .domain(["Interstate", "Intrastate", "Extrasystemic", "Non-state", "One-sided"])
-  .range(["#6c8ae4", "#f28e2b", "#edc948", "#59a14f", "#e15759"]);
+  .domain(TYPE_ORDER)
+  .range(["#6c8ae4","#f28e2b","#edc948","#59a14f","#e15759"]);
 
-// One shared tooltip
-const tip = d3.select("body").append("div").attr("class", "tooltip").style("opacity", 0);
+/* ---------- Shared tooltip ---------- */
+const tip = d3.select("body")
+  .append("div")
+  .attr("class","tooltip")
+  .style("opacity", 0);
 
-// Lightweight helper to print a visible alert inside a mount point
-function alertIn(sel, msg) {
+/* ---------- Utilities ---------- */
+
+// Show a friendly alert inside a target container
+function alertIn(sel, msg){
   const box = d3.select(sel);
-  if (!box.empty()) {
-    box.html("").append("div").attr("class", "alert").text(msg);
+  if (!box.empty()){
+    box.html("").append("div").attr("class","alert").text(msg);
   }
 }
 
-// ISO3 guard
+// ISO3 guard (filters out regions/aggregates)
 const isISO3 = code => typeof code === "string" && /^[A-Z]{3}$/.test(code);
 
-// Header detection tolerant to case/spacing
-function detectColumns(headers) {
+// Heuristic header detection (tolerant to case/spacing)
+function detectColumns(headers){
   const low = headers.map(h => h.toLowerCase());
   const find = kw => headers[low.findIndex(x => x.includes(kw))];
-
   return {
     entity:        find("entity")      || "Entity",
     code:          find("code")        || "Code",
@@ -43,12 +50,12 @@ function detectColumns(headers) {
     intrastate:    find("conflict type: intrastate"),
     extrasystemic: find("conflict type: extrasystemic"),
     nonstate:      find("conflict type: non-state"),
-    onesided:      find("conflict type: one-sided")
+    onesided:      find("conflict type: one-sided"),
   };
 }
 
-// Map raw CSV row -> normalized record
-function mapRow(d, C) {
+// Row mapping → normalized field names
+function mapRow(d, C){
   const r = {
     entity: d[C.entity],
     code:   d[C.code],
@@ -57,425 +64,361 @@ function mapRow(d, C) {
     Intrastate:    +d[C.intrastate]    || 0,
     Extrasystemic: +d[C.extrasystemic] || 0,
     "Non-state":   +d[C.nonstate]      || 0,
-    "One-sided":   +d[C.onesided]      || 0
+    "One-sided":   +d[C.onesided]      || 0,
   };
-  r.total = r.Interstate + r.Intrastate + r.Extrasystemic + r["Non-state"] + r["One-sided"];
+  r.total = TYPE_ORDER.reduce((acc, k) => acc + (r[k] || 0), 0);
   return r;
 }
 
-/* ======================= LOAD CSV ======================= */
-
-let worldOnly = [];  // kept global for the waffle call
-
+/* ---------- Data load + dispatch ---------- */
 d3.csv(DATA_PATH, d3.autoType).then(raw => {
-  if (!raw?.length) throw new Error("CSV appears empty.");
+  if (!raw?.length) throw new Error("CSV is empty.");
 
   const headers = Object.keys(raw[0]);
   const C = detectColumns(headers);
 
   const required = [C.entity, C.code, C.year, C.intrastate, C.nonstate, C.onesided];
   if (required.some(x => !x)) {
-    alertIn("#bar-top10", "Missing expected columns in the CSV.");
-    alertIn("#grouped",   "Missing expected columns in the CSV.");
-    alertIn("#heatmap",   "Missing expected columns in the CSV.");
-    alertIn("#stacked100","Missing expected columns in the CSV.");
-    alertIn("#waffle",    "Missing expected columns in the CSV.");
+    alertIn("#bar-top10", "Could not detect required columns in the CSV.");
+    alertIn("#grouped",  "Could not detect required columns in the CSV.");
+    alertIn("#heatmap",  "Could not detect required columns in the CSV.");
+    alertIn("#stack100", "Could not detect required columns in the CSV.");
+    alertIn("#waffle",   "Could not detect required columns in the CSV.");
     return;
   }
 
-  const rows = raw.map(d => mapRow(d, C));
-
-  // Country rows only (valid ISO3) — exclude "World" and regional aggregates
+  const rows      = raw.map(d => mapRow(d, C));
   const countries = rows.filter(r => isISO3(r.code) && r.entity !== "World");
-  worldOnly = rows.filter(r => r.entity === "World");
+  const worldOnly = rows.filter(r => r.entity === "World");
 
-  // 1) Top-10 bar
+  // Update year labels in the page
   d3.select("#year-top").text(SNAPSHOT_YEAR);
+  d3.select("#year-grouped").text(SNAPSHOT_YEAR);
+  d3.select("#year-waffle").text(SNAPSHOT_YEAR);
+  d3.select("#waffle-year").text(SNAPSHOT_YEAR);
+
+  // 1) Top-10
   drawTop10Bar("#bar-top10", countries, SNAPSHOT_YEAR);
 
-  // 2) Grouped bar (selected countries)
-  d3.select("#year-grouped").text(SNAPSHOT_YEAR);
+  // 2) Grouped (selected countries)
   drawGroupedByType("#grouped", countries, SNAPSHOT_YEAR, FOCUS_COUNTRIES);
 
-  // 3) Heatmap (World)
+  // 3) Heatmap (World only)
   drawWorldHeatmap("#heatmap", worldOnly);
 
-  // 4) 100% stacked (World, over time)
-  drawStacked100("#stacked100", worldOnly);
+  // 4) 100% stacked shares (World over time)
+  drawStacked100("#stack100", worldOnly);
 
-  // 5) Waffle (World, single year)
-  d3.select("#year-waffle").text(SNAPSHOT_YEAR);
+  // 5) Waffle (World composition for SNAPSHOT_YEAR)
   drawWaffle("#waffle", worldOnly, SNAPSHOT_YEAR);
 
 }).catch(err => {
   console.error(err);
-  alertIn("#bar-top10", "Failed to load CSV (check path / CORS).");
-  alertIn("#grouped",   "Failed to load CSV.");
-  alertIn("#heatmap",   "Failed to load CSV.");
-  alertIn("#stacked100","Failed to load CSV.");
-  alertIn("#waffle",    "Failed to load CSV.");
+  ["#bar-top10","#grouped","#heatmap","#stack100","#waffle"].forEach(sel =>
+    alertIn(sel, "Failed to load the CSV. Make sure it is at data/conflict_deaths_by_type.csv")
+  );
 });
 
-/* ======================= CHARTS ======================= */
+/* ===================== CHARTS ===================== */
 
-/* (1) Top-10 countries by conflict-related deaths (snapshot year) */
-function drawTop10Bar(sel, data, year) {
+/* 1) Top-10 barchart */
+function drawTop10Bar(sel, data, year){
   const rows = data.filter(d => d.year === year && d.total > 0);
-  if (!rows.length) { alertIn(sel, `No country data for ${year}.`); return; }
+  if (!rows.length){ alertIn(sel, `No country data for year ${year}.`); return; }
 
-  const top10 = rows.sort((a,b) => d3.descending(a.total, b.total)).slice(0, 10);
+  const top10 = rows.sort((a,b)=>d3.descending(a.total,b.total)).slice(0,10);
 
-  const width = 900, height = 360;
-  const margin = { top: 10, right: 28, bottom: 44, left: 220 };
-
-  const svg = d3.select(sel).html("").append("svg")
-    .attr("width", width)
-    .attr("height", height);
+  const width=900, height=360, margin={top:10,right:28,bottom:44,left:220};
+  const svg = d3.select(sel).html("").append("svg").attr("width",width).attr("height",height);
 
   const x = d3.scaleLinear()
-    .domain([0, d3.max(top10, d => d.total) || 1]).nice()
-    .range([margin.left, width - margin.right]);
+    .domain([0, d3.max(top10,d=>d.total)||1]).nice()
+    .range([margin.left, width-margin.right]);
 
   const y = d3.scaleBand()
-    .domain(top10.map(d => d.entity))
-    .range([margin.top, height - margin.bottom])
+    .domain(top10.map(d=>d.entity))
+    .range([margin.top, height-margin.bottom])
     .padding(0.18);
 
   // grid
-  svg.append("g").attr("class", "grid")
-    .attr("transform", `translate(0,${height - margin.bottom})`)
-    .call(d3.axisBottom(x).ticks(6)
-      .tickSize(-(height - margin.top - margin.bottom)).tickFormat(""));
+  svg.append("g")
+    .attr("class","grid")
+    .attr("transform",`translate(0,${height-margin.bottom})`)
+    .call(d3.axisBottom(x).ticks(6).tickSize(-(height-margin.top-margin.bottom)).tickFormat(""));
 
   // axes
-  svg.append("g").attr("class", "axis")
-    .attr("transform", `translate(0,${height - margin.bottom})`)
+  svg.append("g").attr("class","axis")
+    .attr("transform",`translate(0,${height-margin.bottom})`)
     .call(d3.axisBottom(x).ticks(6).tickFormat(d3.format(",")));
 
-  svg.append("g").attr("class", "axis")
-    .attr("transform", `translate(${margin.left},0)`)
+  svg.append("g").attr("class","axis")
+    .attr("transform",`translate(${margin.left},0)`)
     .call(d3.axisLeft(y));
 
   // bars
-  svg.append("g").selectAll("rect")
-    .data(top10)
-    .join("rect")
-      .attr("x", x(0))
-      .attr("y", d => y(d.entity))
-      .attr("width", d => x(d.total) - x(0))
-      .attr("height", y.bandwidth())
-      .attr("fill", "#8da2fb")
-      .on("mousemove", (ev, d) => {
-        tip.style("opacity", 1)
-          .html(`<strong>${d.entity}</strong><br/>${d3.format(",")(d.total)} deaths`)
-          .style("left", (ev.pageX) + "px")
-          .style("top",  (ev.pageY) + "px");
-      })
-      .on("mouseleave", () => tip.style("opacity", 0));
+  svg.append("g").selectAll("rect").data(top10).join("rect")
+    .attr("x", x(0)).attr("y", d=>y(d.entity))
+    .attr("width", d=>x(d.total)-x(0)).attr("height", y.bandwidth())
+    .attr("fill", "#8da2fb")
+    .on("mousemove",(ev,d)=>{
+      tip.style("opacity",1)
+        .html(`<strong>${d.entity}</strong><br/>${d3.format(",")(d.total)} deaths`)
+        .style("left", (ev.pageX)+"px").style("top",(ev.pageY)+"px");
+    })
+    .on("mouseleave",()=> tip.style("opacity",0));
 
-  // robust inline labels (auto inside/outside)
-  const EDGE_PAD = 84;
+  // Value labels with edge-avoidance (works when bar touches the right border)
   const fmt = d3.format(",");
-  svg.append("g").selectAll("text.value")
-    .data(top10)
-    .join("text")
-      .attr("class", "value")
-      .attr("y", d => y(d.entity) + y.bandwidth() / 2)
-      .attr("dy", "0.32em")
-      .text(d => fmt(d.total))
-      .attr("x", d => {
-        const xr = x(d.total);
-        return (width - margin.right - xr) < EDGE_PAD ? xr - 6 : xr + 6;
-      })
-      .attr("text-anchor", d => (width - margin.right - x(d.total)) < EDGE_PAD ? "end" : "start")
-      .attr("fill", d => (width - margin.right - x(d.total)) < EDGE_PAD ? "white" : "#111827")
-      .style("font-size", "12px");
+  const EDGE_PAD = 84;
+  svg.append("g").selectAll("text.value").data(top10).join("text")
+    .attr("class","value")
+    .attr("y", d=> y(d.entity)+y.bandwidth()/2)
+    .attr("dy","0.32em")
+    .text(d => fmt(d.total))
+    .attr("x", d=>{
+      const xr=x(d.total);
+      return (width-margin.right-xr)<EDGE_PAD ? xr-6 : xr+6;
+    })
+    .attr("text-anchor", d=> (width-margin.right-x(d.total))<EDGE_PAD ? "end" : "start")
+    .attr("fill", d=> (width-margin.right-x(d.total))<EDGE_PAD ? "white" : "#111827")
+    .style("font-size","12px");
 }
 
-/* (2) Grouped bar — selected countries × conflict type (snapshot year) */
-function drawGroupedByType(sel, data, year, focus) {
-  const keys = ["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"];
-  const rows = data.filter(d => d.year === year && focus.includes(d.entity));
-  if (!rows.length) { alertIn(sel, `No data for selected countries in ${year}.`); return; }
+/* 2) Grouped barchart (selected countries × conflict type) */
+function drawGroupedByType(sel, data, year, focus){
+  const rows = data.filter(d => d.year===year && focus.includes(d.entity));
+  if (!rows.length){ alertIn(sel, `No data for selected countries in ${year}.`); return; }
 
-  const groups = focus.filter(c => rows.some(r => r.entity === c));
+  const groups = focus.filter(c => rows.some(r => r.entity===c));
   const tidy = groups.map(g => {
-    const d = rows.find(r => r.entity === g);
-    return { group: g, values: keys.map(k => ({ key: k, value: d ? d[k] : 0 })) };
+    const d = rows.find(r => r.entity===g);
+    return { group:g, values: TYPE_ORDER.map(k => ({key:k, value:d?d[k]:0})) };
   });
 
-  const width = 900, height = 360;
-  const margin = { top: 10, right: 24, bottom: 64, left: 56 };
+  const width=900, height=360, margin={top:10,right:24,bottom:62,left:56};
+  const svg = d3.select(sel).html("").append("svg").attr("width",width).attr("height",height);
 
-  const svg = d3.select(sel).html("").append("svg")
-    .attr("width", width)
-    .attr("height", height);
+  const x0 = d3.scaleBand().domain(groups).range([margin.left, width-margin.right]).padding(0.22);
+  const x1 = d3.scaleBand().domain(TYPE_ORDER).range([0, x0.bandwidth()]).padding(0.08);
+  const y  = d3.scaleLinear()
+    .domain([0, d3.max(tidy.flatMap(t=>t.values), d=>d.value)||1]).nice()
+    .range([height-margin.bottom, margin.top]);
 
-  const x0 = d3.scaleBand().domain(groups)
-    .range([margin.left, width - margin.right]).padding(0.22);
-
-  const x1 = d3.scaleBand().domain(keys)
-    .range([0, x0.bandwidth()]).padding(0.08);
-
-  const y = d3.scaleLinear()
-    .domain([0, d3.max(tidy.flatMap(t => t.values), d => d.value) || 1]).nice()
-    .range([height - margin.bottom, margin.top]);
-
-  svg.append("g").attr("class", "axis")
-    .attr("transform", `translate(0,${height - margin.bottom})`)
+  svg.append("g").attr("class","axis")
+    .attr("transform",`translate(0,${height-margin.bottom})`)
     .call(d3.axisBottom(x0))
-    .selectAll("text")
-      .attr("transform", "rotate(-18)")
-      .style("text-anchor", "end");
+    .selectAll("text").attr("transform","rotate(-18)").style("text-anchor","end");
 
-  svg.append("g").attr("class", "axis")
-    .attr("transform", `translate(${margin.left},0)`)
+  svg.append("g").attr("class","axis")
+    .attr("transform",`translate(${margin.left},0)`)
     .call(d3.axisLeft(y).ticks(5).tickFormat(d3.format(",")));
 
-  svg.append("g").selectAll("g")
-    .data(tidy)
-    .join("g")
-      .attr("transform", d => `translate(${x0(d.group)},0)`)
-    .selectAll("rect")
-    .data(d => d.values)
-    .join("rect")
-      .attr("x", d => x1(d.key))
-      .attr("y", d => y(d.value))
-      .attr("width",  x1.bandwidth())
-      .attr("height", d => y(0) - y(d.value))
-      .attr("fill",   d => TYPE_COLORS(d.key))
-      .on("mousemove", (ev, d) => {
-        tip.style("opacity", 1)
+  svg.append("g").selectAll("g").data(tidy).join("g")
+    .attr("transform",d=>`translate(${x0(d.group)},0)`)
+    .selectAll("rect").data(d=>d.values).join("rect")
+      .attr("x", d=>x1(d.key)).attr("y", d=>y(d.value))
+      .attr("width", x1.bandwidth()).attr("height", d=>y(0)-y(d.value))
+      .attr("fill", d=>TYPE_COLORS(d.key))
+      .on("mousemove",(ev,d)=>{
+        tip.style("opacity",1)
           .html(`<strong>${d.key}</strong><br/>${d3.format(",")(d.value)} deaths`)
-          .style("left", (ev.pageX) + "px")
-          .style("top",  (ev.pageY) + "px");
+          .style("left",(ev.pageX)+"px").style("top",(ev.pageY)+"px");
       })
-      .on("mouseleave", () => tip.style("opacity", 0));
+      .on("mouseleave",()=> tip.style("opacity",0));
 
-  // pill legend
-  const legend = d3.select(sel).append("div").attr("class", "legend");
-  TYPE_COLORS.domain().forEach(k => {
-    const item = legend.append("span").attr("class", "pill");
-    item.append("span").attr("class", "swatch").style("background", TYPE_COLORS(k));
+  // Legend (pills under the chart)
+  const legend = d3.select(sel).append("div").attr("class","legend");
+  TYPE_ORDER.forEach(k=>{
+    const item = legend.append("span").attr("class","pill");
+    item.append("span").attr("class","swatch").style("background", TYPE_COLORS(k));
     item.append("span").text(k);
   });
 }
 
-/* (3) Heatmap — World totals by type × year */
-function drawWorldHeatmap(sel, worldRows) {
-  if (!worldRows.length) { alertIn(sel, "No World aggregate rows found."); return; }
+/* 3) Heatmap (World totals per type × year) */
+function drawWorldHeatmap(sel, worldRows){
+  if (!worldRows.length){ alertIn(sel, "No World aggregate rows found."); return; }
 
-  const keys = ["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"];
-  const years = worldRows.map(d => d.year).sort((a, b) => a - b);
-
+  const years = worldRows.map(d=>d.year).sort((a,b)=>a-b);
   const cells = [];
-  worldRows.forEach(d => keys.forEach(k => cells.push({ row: k, col: d.year, value: d[k] })));
+  worldRows.forEach(d => TYPE_ORDER.forEach(k => cells.push({row:k, col:d.year, value:d[k]})));
 
-  const width = 900, height = 280;
-  const margin = { top: 36, right: 18, bottom: 36, left: 110 }; // extra top for legend title
+  const width=900, height=280, margin={top:36,right:18,bottom:34,left:110}; // extra top for legend label
+  const svg = d3.select(sel).html("").append("svg").attr("width",width).attr("height",height);
 
-  const svg = d3.select(sel).html("").append("svg")
-    .attr("width", width)
-    .attr("height", height);
+  const x = d3.scaleBand().domain(years).range([margin.left, width-margin.right]).padding(0);
+  const y = d3.scaleBand().domain(TYPE_ORDER).range([margin.top, height-margin.bottom]).padding(0.06);
 
-  const x = d3.scaleBand().domain(years)
-    .range([margin.left, width - margin.right]).padding(0);
+  const max = d3.max(cells, d=>d.value)||1;
+  const color = d3.scaleSequential(d3.interpolateOrRd).domain([0,max]);
 
-  const y = d3.scaleBand().domain(keys)
-    .range([margin.top, height - margin.bottom]).padding(0.06);
+  svg.append("g").selectAll("rect").data(cells).join("rect")
+    .attr("x", d=>x(d.col)).attr("y", d=>y(d.row))
+    .attr("width", x.bandwidth()).attr("height", y.bandwidth())
+    .attr("fill", d=>color(d.value))
+    .on("mousemove",(ev,d)=>{
+      tip.style("opacity",1)
+        .html(`<strong>${d.row}</strong> — ${d.col}<br/>${d3.format(",")(d.value)} deaths`)
+        .style("left",(ev.pageX)+"px").style("top",(ev.pageY)+"px");
+    })
+    .on("mouseleave",()=> tip.style("opacity",0));
 
-  const max = d3.max(cells, d => d.value) || 1;
-  const color = d3.scaleSequential(d3.interpolateOrRd).domain([0, max]);
-
-  svg.append("g").selectAll("rect")
-    .data(cells)
-    .join("rect")
-      .attr("x", d => x(d.col))
-      .attr("y", d => y(d.row))
-      .attr("width",  x.bandwidth())
-      .attr("height", y.bandwidth())
-      .attr("fill", d => color(d.value))
-      .on("mousemove", (ev, d) => {
-        tip.style("opacity", 1)
-          .html(`<strong>${d.row}</strong> — ${d.col}<br/>${d3.format(",")(d.value)} deaths`)
-          .style("left", (ev.pageX) + "px")
-          .style("top",  (ev.pageY) + "px");
-      })
-      .on("mouseleave", () => tip.style("opacity", 0));
-
-  const xticks = years.filter(y => y % 4 === 0 || y === years[0] || y === years.at(-1));
-
-  svg.append("g").attr("class", "axis")
-    .attr("transform", `translate(0,${height - margin.bottom})`)
+  const xticks = years.filter(y => y%4===0 || y===years[0] || y===years.at(-1));
+  svg.append("g").attr("class","axis")
+    .attr("transform",`translate(0,${height-margin.bottom})`)
     .call(d3.axisBottom(x).tickValues(xticks).tickSize(0));
 
-  svg.append("g").attr("class", "axis")
-    .attr("transform", `translate(${margin.left},0)`)
+  svg.append("g").attr("class","axis")
+    .attr("transform",`translate(${margin.left},0)`)
     .call(d3.axisLeft(y).tickSize(0));
 
-  // Color legend + title
-  const legendW = 220, legendH = 10, lx = width - legendW - 18, ly = margin.top - 22;
+  // Gradient legend + label (no duplication)
+  const legendW=220, legendH=10, legendX=width-legendW-18, legendY=margin.top-18;
   const defs = svg.append("defs");
-  const grad = defs.append("linearGradient").attr("id", "hm-grad");
-  grad.append("stop").attr("offset", "0%").attr("stop-color", color(0));
-  grad.append("stop").attr("offset", "100%").attr("stop-color", color(max));
-  svg.append("rect").attr("x", lx).attr("y", ly + 14).attr("width", legendW).attr("height", legendH).attr("fill", "url(#hm-grad)");
+  const grad = defs.append("linearGradient").attr("id","hm-grad");
+  grad.append("stop").attr("offset","0%").attr("stop-color", color(0));
+  grad.append("stop").attr("offset","100%").attr("stop-color", color(max));
 
-  const s = d3.scaleLinear().domain([0, max]).range([lx, lx + legendW]);
-  svg.append("g").attr("class", "axis").attr("transform", `translate(0,${ly + 14 + legendH})`)
-    .call(d3.axisBottom(s).ticks(3).tickFormat(d3.format(",")));
+  svg.append("rect")
+    .attr("x",legendX).attr("y",legendY)
+    .attr("width",legendW).attr("height",legendH)
+    .attr("fill","url(#hm-grad)");
 
+  const s = d3.scaleLog().domain([1,max]).range([legendX, legendX+legendW]); // log scale ticks
+  svg.append("g").attr("class","axis")
+    .attr("transform",`translate(0,${legendY+legendH})`)
+    .call(d3.axisBottom(s).ticks(3, "~s"));
+
+  // Label centered above the legend
   svg.append("text")
-    .attr("x", lx + legendW / 2)
-    .attr("y", ly + 2)
+    .attr("x", legendX + legendW / 2)
+    .attr("y", legendY - 6)
     .attr("text-anchor", "middle")
     .attr("fill", "#555")
     .attr("font-size", "12px")
     .text("Number of deaths (log scale)");
 }
 
-/* (4) 100% stacked — World, share by type over time */
-function drawStacked100(sel, worldRows) {
-  if (!worldRows.length) { alertIn(sel, "No World aggregate rows found."); return; }
+/* 4) 100% stacked barchart (shares by type over time, World) */
+function drawStacked100(sel, worldRows){
+  if (!worldRows.length){ alertIn(sel, "No World aggregate rows found."); return; }
 
-  const keys = ["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"];
-  const years = worldRows.map(d => d.year).sort((a, b) => a - b);
-
-  // Normalize each year to proportions that sum to 1
-  const stackedData = years.map(y => {
-    const r = worldRows.find(d => d.year === y);
-    const totals = keys.reduce((acc, k) => acc + (+r[k] || 0), 0) || 1;
-    const obj = { year: y };
-    keys.forEach(k => obj[k] = (+r[k] || 0) / totals);
-    return obj;
+  // Build proportion rows for each year
+  const years = worldRows.map(d=>d.year).sort((a,b)=>a-b);
+  const propRows = years.map(y => {
+    const d = worldRows.find(r => r.year===y);
+    const totals = TYPE_ORDER.map(k => d[k] || 0);
+    const sum = d3.sum(totals) || 1;
+    const r = { year:y };
+    TYPE_ORDER.forEach(k => r[k] = (d[k]||0)/sum);
+    return r;
   });
 
-  const series = d3.stack().keys(keys)(stackedData);
+  const width=900, height=360, margin={top:8,right:24,bottom:58,left:44};
+  const svg = d3.select(sel).html("").append("svg").attr("width",width).attr("height",height);
 
-  const width = 900, height = 300;
-  const margin = { top: 10, right: 18, bottom: 40, left: 56 };
+  const x = d3.scaleBand().domain(years).range([margin.left, width-margin.right]).padding(0.08);
+  const y = d3.scaleLinear().domain([0,1]).range([height-margin.bottom, margin.top]);
 
-  const svg = d3.select(sel).html("").append("svg")
-    .attr("width", width)
-    .attr("height", height);
+  const stack = d3.stack().keys(TYPE_ORDER).order(d3.stackOrderNone).offset(d3.stackOffsetExpand);
+  const series = stack(propRows);
 
-  const x = d3.scaleBand().domain(years)
-    .range([margin.left, width - margin.right]).padding(0.15);
-
-  const y = d3.scaleLinear().domain([0, 1]).range([height - margin.bottom, margin.top]);
-
-  // axes
-  const xticks = years.filter(yv => yv % 4 === 0 || yv === years[0] || yv === years.at(-1));
-  svg.append("g").attr("class", "axis")
-    .attr("transform", `translate(0,${height - margin.bottom})`)
-    .call(d3.axisBottom(x).tickValues(xticks));
-
-  svg.append("g").attr("class", "axis")
-    .attr("transform", `translate(${margin.left},0)`)
-    .call(d3.axisLeft(y).ticks(5).tickFormat(d => d3.format(".0%")(d)));
-
-  // bars
-  svg.append("g").selectAll("g.layer")
-    .data(series)
-    .join("g")
-      .attr("class", "layer")
-      .attr("fill", d => TYPE_COLORS(d.key))
-    .selectAll("rect")
-    .data(d => d.map(v => ({ key: d.key, x: v.data.year, y0: v[0], y1: v[1] })))
-    .join("rect")
-      .attr("x", d => x(d.x))
-      .attr("y", d => y(d.y1))
-      .attr("height", d => y(d.y0) - y(d.y1))
+  svg.append("g").selectAll("g").data(series).join("g")
+    .attr("fill", d => TYPE_COLORS(d.key))
+    .selectAll("rect").data(d => d).join("rect")
+      .attr("x", d => x(d.data.year))
+      .attr("y", d => y(d[1]))
+      .attr("height", d => y(d[0]) - y(d[1]))
       .attr("width", x.bandwidth())
-      .on("mousemove", (ev, d) => {
-        const pct = d3.format(".0%")(d.y1 - d.y0);
-        tip.style("opacity", 1)
-           .html(`<strong>${d.key}</strong> — ${d.x}<br/>${pct} share`)
-           .style("left", (ev.pageX) + "px")
-           .style("top",  (ev.pageY) + "px");
+      .on("mousemove",(ev,d)=>{
+        // find the key by checking parent node’s fill
+        const key = d3.select(ev.currentTarget.parentNode).datum().key;
+        const pct = ((d[1]-d[0])*100);
+        tip.style("opacity",1)
+          .html(`<strong>${key}</strong> — ${d.data.year}<br/>${pct.toFixed(0)}%`)
+          .style("left",(ev.pageX)+"px").style("top",(ev.pageY)+"px");
       })
-      .on("mouseleave", () => tip.style("opacity", 0));
+      .on("mouseleave",()=> tip.style("opacity",0));
 
-  // legend
-  const legend = d3.select(sel).append("div").attr("class", "legend");
-  TYPE_COLORS.domain().forEach(k => {
-    const item = legend.append("span").attr("class", "pill");
-    item.append("span").attr("class", "swatch").style("background", TYPE_COLORS(k));
+  svg.append("g").attr("class","axis")
+    .attr("transform",`translate(0,${height-margin.bottom})`)
+    .call(d3.axisBottom(x).tickValues(years.filter(y => y%2===0)));
+
+  svg.append("g").attr("class","axis")
+    .attr("transform",`translate(${margin.left},0)`)
+    .call(d3.axisLeft(y).ticks(5).tickFormat(d=>d*100+"%"));
+
+  // Legend (pills)
+  const legend = d3.select(sel).append("div").attr("class","legend");
+  TYPE_ORDER.forEach(k=>{
+    const item = legend.append("span").attr("class","pill");
+    item.append("span").attr("class","swatch").style("background", TYPE_COLORS(k));
     item.append("span").text(k);
   });
 }
 
-/* (5) Waffle — World composition in a single year (10×10 grid) */
-function drawWaffle(sel, worldRows, year) {
-  const keys = ["Interstate","Intrastate","Extrasystemic","Non-state","One-sided"];
-  const w = worldRows.find(d => d.year === year);
-  if (!w) { alertIn(sel, `No World aggregate for ${year}.`); return; }
+/* 5) Waffle chart (World composition in a single year) */
+function drawWaffle(sel, worldRows, year){
+  const d = worldRows.find(r => r.year === year);
+  if (!d){ alertIn(sel, `No World data for year ${year}.`); return; }
 
-  const totals = keys.map(k => ({ key: k, value: +w[k] || 0 }));
-  const grandTotal = d3.sum(totals, d => d.value);
-  if (!grandTotal) { alertIn(sel, `World total is zero in ${year}.`); return; }
+  // Compute shares
+  const totals = TYPE_ORDER.map(k => d[k] || 0);
+  const sum = d3.sum(totals) || 1;
+  const shares = TYPE_ORDER.map(k => ({ key:k, value: d[k]||0, pct: (d[k]||0)/sum }));
 
-  // Allocate 100 cells by proportional rounding (largest remainders)
-  const raw = totals.map(d => {
-    const exact = (d.value / grandTotal) * 100;
-    return { key: d.key, exact, cells: Math.floor(exact), value: d.value };
-  });
-  let used = d3.sum(raw, d => d.cells);
-  let missing = 100 - used;
-  const order = raw.slice().sort((a, b) => d3.descending(a.exact - Math.floor(a.exact), b.exact - Math.floor(b.exact)));
-
-  for (let i = 0; i < Math.abs(missing); i++) {
-    const r = order[i % order.length];
-    r.cells += (missing > 0 ? 1 : -1);
+  // Grid definition (10×10 = 100 squares)
+  const cols = 10, rows = 10, totalCells = cols*rows;
+  const cellsByType = shares.map(s => ({ key:s.key, cells: Math.round(s.pct * totalCells), value:s.value, pct:s.pct }));
+  const used = d3.sum(cellsByType, c => c.cells);
+  if (used !== totalCells){
+    // Add/subtract to make it sum exactly to 100 (rounding fix)
+    const diff = totalCells - used;
+    cellsByType[0].cells += diff;
   }
 
-  const cells = [];
-  raw.forEach(r => { for (let i = 0; i < Math.max(0, r.cells); i++) cells.push({ key: r.key }); });
-  while (cells.length < 100) cells.push({ key: order[0].key });
-  if (cells.length > 100) cells.length = 100;
+  // Build the 100 cells in type order (legend order)
+  const grid = [];
+  cellsByType.forEach(s => {
+    for (let i=0; i<s.cells; i++){
+      grid.push({ key: s.key, value: s.value, pct: s.pct });
+    }
+  });
 
-  const width = 900, height = 320;
-  const margin = { top: 18, right: 18, bottom: 56, left: 18 };
-  const cols = 10, rows = 10, gap = 4;
+  const width=900, height=360;
+  const margin={top:18,right:18,bottom:10,left:18};
+  const cell = 20, gap = 4;
 
-  const svg = d3.select(sel).html("").append("svg")
-    .attr("width", width).attr("height", height);
+  const svg = d3.select(sel).html("").append("svg").attr("width",width).attr("height",height);
 
-  const cellSize = Math.min(
-    Math.floor((width  - margin.left - margin.right  - gap * (cols - 1)) / cols),
-    Math.floor((height - margin.top  - margin.bottom - gap * (rows - 1)) / rows)
-  );
-  const gridW = cellSize * cols + gap * (cols - 1);
-  const gridH = cellSize * rows + gap * (rows - 1);
-  const gridX = margin.left + Math.floor((width  - margin.left - margin.right  - gridW) / 2);
-  const gridY = margin.top + 10;
+  // Center the 10×10 block
+  const blockW = cols*cell + (cols-1)*gap;
+  const blockH = rows*cell + (rows-1)*gap;
+  const startX = (width  - blockW)/2;
+  const startY = (height - blockH)/2 - 6;
 
-  const g = svg.append("g").attr("transform", `translate(${gridX},${gridY})`);
-  g.selectAll("rect")
-    .data(cells)
-    .join("rect")
-      .attr("x", (_, i) => (i % cols) * (cellSize + gap))
-      .attr("y", (_, i) => Math.floor(i / cols) * (cellSize + gap))
-      .attr("width",  cellSize)
-      .attr("height", cellSize)
-      .attr("rx", 3).attr("ry", 3)
-      .attr("fill", d => TYPE_COLORS(d.key))
-      .on("mousemove", (ev, d) => {
-        const count = totals.find(t => t.key === d.key)?.value || 0;
-        const share = d3.format(".0%")(count / grandTotal);
-        tip.style("opacity", 1)
-           .html(`<strong>${d.key}</strong><br/>${d3.format(",")(count)} deaths<br/>${share} of ${year}`)
-           .style("left", (ev.pageX) + "px")
-           .style("top",  (ev.pageY) + "px");
-      })
-      .on("mouseleave", () => tip.style("opacity", 0));
+  svg.append("g").selectAll("rect").data(grid).join("rect")
+    .attr("x", (_,i)=> startX + (i%cols)*(cell+gap))
+    .attr("y", (_,i)=> startY + Math.floor(i/cols)*(cell+gap))
+    .attr("width", cell)
+    .attr("height", cell)
+    .attr("rx", 4).attr("ry", 4)
+    .attr("fill", d=> TYPE_COLORS(d.key))
+    .on("mousemove",(ev,d)=>{
+      tip.style("opacity",1)
+        .html(`<strong>${d.key}</strong><br/>${d3.format(",")(d.value)} deaths<br/>${Math.round(d.pct*100)}% of ${year}`)
+        .style("left",(ev.pageX)+"px").style("top",(ev.pageY)+"px");
+    })
+    .on("mouseleave",()=> tip.style("opacity",0));
 
-  // legend + caption
-  const legend = d3.select(sel).append("div").attr("class", "legend");
-  TYPE_COLORS.domain().forEach(k => {
-    const item = legend.append("span").attr("class", "pill");
-    item.append("span").attr("class", "swatch").style("background", TYPE_COLORS(k));
+  // Update the single caption’s year in HTML (no extra caption from JS)
+  d3.select("#waffle-year").text(year);
+
+  // Legend (pills) under the waffle
+  const legend = d3.select(sel).append("div").attr("class","legend");
+  TYPE_ORDER.forEach(k=>{
+    const item = legend.append("span").attr("class","pill");
+    item.append("span").attr("class","swatch").style("background", TYPE_COLORS(k));
     item.append("span").text(k);
   });
-
-  }
+}
