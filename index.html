@@ -94,6 +94,36 @@
       </article>
     </section>
 
+    <!-- ===================================================== -->
+<!-- Section 2 — Distributions (Histogram, Violin, Boxplot) -->
+<!-- ===================================================== -->
+<section id="distributions" class="container">
+  <h2>Distributions: comparing categories with density and quartiles</h2>
+  <p class="note">
+    The charts below use the same UCDP/OWID dataset and focus on distributions across countries
+    for the snapshot year <span id="dist-year">2023</span>. Aggregates (e.g., “World”, continents)
+    are excluded via ISO3 filtering.
+  </p>
+
+  <article class="card" aria-labelledby="hist-title">
+    <h3 id="hist-title">Histogram of conflict-related deaths per country (2023)</h3>
+    <div id="histogram"></div>
+    <p class="note">Each bar counts the number of countries falling in the bin of total deaths during ongoing conflicts (UCDP). ISO3 filter removes regional aggregates.</p>
+  </article>
+
+  <article class="card" aria-labelledby="violin-title">
+    <h3 id="violin-title">Violin plot — distribution by conflict type (2023)</h3>
+    <div id="violin"></div>
+    <p class="note">For each conflict type, the violin encodes the kernel density of country-level deaths. The white dot marks the median; the line spans the interquartile range.</p>
+  </article>
+
+  <article class="card" aria-labelledby="box-title">
+    <h3 id="box-title">Boxplot — distribution by conflict type (2023)</h3>
+    <div id="boxplot"></div>
+    <p class="note">Box shows Q1–Q3 with the median; whiskers extend to non-outlier min/max. Values are country-level totals per conflict type; aggregates excluded.</p>
+  </article>
+</section>
+
     <!-- Footer / credits -->
     <footer class="site-footer">
       <p>© 2025 — Dario Onsori. Data: UCDP via Our World in Data (CC BY).</p>
