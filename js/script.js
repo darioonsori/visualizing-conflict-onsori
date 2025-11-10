@@ -129,6 +129,9 @@ d3.csv(DATA_PATH, d3.autoType).then(raw => {
   // 7) Violin plot
   drawViolin("#violin", countries, SNAPSHOT_YEAR);
 
+  // 8) Boxplot — country-level distribution by conflict type
+  drawBoxplot("#boxplot", countries, SNAPSHOT_YEAR);
+
 }).catch(err => {
   console.error(err);
   ["#bar-top10","#grouped","#heatmap","#stack100","#waffle"].forEach(sel =>
@@ -693,6 +696,185 @@ function drawViolin(sel, data, year) {
     .call(d3.axisLeft(y));
 
   // 7) X-axis label (placed low enough not to be clipped by the card)
+  svg.append("text")
+    .attr("class", "axis-label")
+    .attr("x", (width + margin.left) / 2)
+    .attr("y", height - margin.bottom + 58)
+    .attr("text-anchor", "middle")
+    .text("Deaths per country");
+}
+
+/* 8) Boxplot — country-level distribution by conflict type (snapshot year) */
+function drawBoxplot(sel, data, year) {
+  // 1) Collect per-type arrays (only positive values, country rows only)
+  const rows = data.filter(d => d.year === year && isISO3(d.code) && d.total > 0);
+  if (!rows.length) { alertIn(sel, `No data available for ${year}.`); return; }
+
+  const tidy = TYPE_ORDER.map(k => ({
+    key: k,
+    values: rows.map(r => r[k]).filter(v => v > 0)
+  }));
+  if (tidy.every(d => d.values.length === 0)) {
+    alertIn(sel, `No positive values by type in ${year}.`);
+    return;
+  }
+
+  // 2) Shared x-domain (99th percentile clip for readability, like the violin)
+  const allVals = tidy.flatMap(d => d.values).sort(d3.ascending);
+  const q99 = d3.quantile(allVals, 0.99) || d3.max(allVals) || 1;
+
+  // 3) Layout and scales
+  const width = 900, height = 360;
+  const margin = { top: 10, right: 30, bottom: 70, left: 110 };
+
+  const svg = d3.select(sel).html("")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  const x = d3.scaleLinear()
+    .domain([0, q99]).nice()
+    .range([margin.left, width - margin.right]);
+
+  const y = d3.scaleBand()
+    .domain(TYPE_ORDER)
+    .range([margin.top, height - margin.bottom])
+    .padding(0.35);
+
+  // 4) Light horizontal grid
+  svg.append("g")
+    .attr("class", "grid")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(d3.axisLeft(y)
+      .tickSize(-(width - margin.left - margin.right))
+      .tickFormat(""))
+    .selectAll("line")
+    .attr("opacity", 0.25);
+
+  // 5) Compute Tukey stats per type (whiskers stop at the last non-outlier)
+  const stats = tidy.map(d => {
+    const s = d.values.slice().sort(d3.ascending);
+    if (!s.length) {
+      return { key: d.key, n: 0, q1: 0, med: 0, q3: 0, iqr: 0, low: 0, high: 0, outliers: [] };
+    }
+    const q1  = d3.quantileSorted(s, 0.25) || 0;
+    const med = d3.quantileSorted(s, 0.50) || 0;
+    const q3  = d3.quantileSorted(s, 0.75) || 0;
+    const iqr = q3 - q1;
+    const fenceLow  = q1 - 1.5 * iqr;
+    const fenceHigh = q3 + 1.5 * iqr;
+
+    // whiskers: last values inside the fences
+    const inside = s.filter(v => v >= fenceLow && v <= fenceHigh);
+    const low  = inside.length ? d3.min(inside) : q1;
+    const high = inside.length ? d3.max(inside) : q3;
+
+    // outliers: for optional dots
+    const outliers = s.filter(v => v < fenceLow || v > fenceHigh);
+
+    return { key: d.key, n: s.length, q1, med, q3, iqr, low, high, outliers };
+  });
+
+  // 6) Draw boxes, whiskers, and median line
+  const boxH = Math.min(28, y.bandwidth());   // box height (responsive)
+
+  const g = svg.append("g");
+
+  // Whisker lines
+  g.selectAll("line.whisker").data(stats).join("line")
+    .attr("class", "whisker")
+    .attr("x1", d => x(Math.min(d.low,  q99)))
+    .attr("x2", d => x(Math.min(d.high, q99)))
+    .attr("y1", d => y(d.key) + y.bandwidth() / 2)
+    .attr("y2", d => y(d.key) + y.bandwidth() / 2)
+    .attr("stroke", "#7c818b");
+
+  // Whisker end caps
+  g.selectAll("line.cap-low").data(stats).join("line")
+    .attr("class", "cap-low")
+    .attr("x1", d => x(Math.min(d.low, q99)))
+    .attr("x2", d => x(Math.min(d.low, q99)))
+    .attr("y1", d => y(d.key) + (y.bandwidth() - boxH) / 2)
+    .attr("y2", d => y(d.key) + (y.bandwidth() + boxH) / 2)
+    .attr("stroke", "#7c818b");
+
+  g.selectAll("line.cap-high").data(stats).join("line")
+    .attr("class", "cap-high")
+    .attr("x1", d => x(Math.min(d.high, q99)))
+    .attr("x2", d => x(Math.min(d.high, q99)))
+    .attr("y1", d => y(d.key) + (y.bandwidth() - boxH) / 2)
+    .attr("y2", d => y(d.key) + (y.bandwidth() + boxH) / 2)
+    .attr("stroke", "#7c818b");
+
+  // Boxes (Q1—Q3)
+  g.selectAll("rect.box").data(stats).join("rect")
+    .attr("class", "box")
+    .attr("x", d => x(Math.min(d.q1, q99)))
+    .attr("y", d => y(d.key) + (y.bandwidth() - boxH) / 2)
+    .attr("width", d => Math.max(0, x(Math.min(d.q3, q99)) - x(Math.min(d.q1, q99))))
+    .attr("height", boxH)
+    .attr("fill", d => TYPE_COLORS(d.key))
+    .attr("fill-opacity", 0.28)
+    .attr("stroke", d => TYPE_COLORS(d.key))
+    .attr("stroke-width", 1.2)
+    .on("mousemove", (ev, d) => {
+      // Tooltip shows RAW statistics (not clipped)
+      const fmt = d3.format(",");
+      tip.style("opacity", 1)
+        .html(
+          `<strong>${d.key}</strong><br/>
+           n = ${d.n}<br/>
+           Q1–Median–Q3: ${fmt(Math.round(d.q1))} – ${fmt(Math.round(d.med))} – ${fmt(Math.round(d.q3))}<br/>
+           Whiskers: ${fmt(Math.round(d.low))} – ${fmt(Math.round(d.high))}`
+        )
+        .style("left", (ev.pageX) + "px")
+        .style("top", (ev.pageY) + "px");
+    })
+    .on("mouseleave", () => tip.style("opacity", 0));
+
+  // Median line
+  g.selectAll("line.median").data(stats).join("line")
+    .attr("class", "median")
+    .attr("x1", d => x(Math.min(d.med, q99)))
+    .attr("x2", d => x(Math.min(d.med, q99)))
+    .attr("y1", d => y(d.key) + (y.bandwidth() - boxH) / 2)
+    .attr("y2", d => y(d.key) + (y.bandwidth() + boxH) / 2)
+    .attr("stroke", "#111")
+    .attr("stroke-width", 2);
+
+  // Optional: outlier points (subtle and uncluttered)
+  g.selectAll("g.outliers").data(stats).join("g")
+    .attr("class", "outliers")
+    .each(function(d) {
+      d3.select(this).selectAll("circle")
+        .data(d.outliers)
+        .join("circle")
+          .attr("cx", v => x(Math.min(v, q99)))
+          .attr("cy", y(d.key) + y.bandwidth() / 2 + (Math.random() - 0.5) * (boxH * 0.6)) // light jitter
+          .attr("r", 2.2)
+          .attr("fill", "#555")
+          .attr("fill-opacity", 0.5)
+          .on("mousemove", (ev, v) => {
+            tip.style("opacity", 1)
+              .html(`<strong>${d.key}</strong><br/>Outlier: ${d3.format(",")(Math.round(v))}`)
+              .style("left", (ev.pageX) + "px")
+              .style("top", (ev.pageY) + "px");
+          })
+          .on("mouseleave", () => tip.style("opacity", 0));
+    });
+
+  // 7) Axes
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(0,${height - margin.bottom})`)
+    .call(d3.axisBottom(x).ticks(6, "~s"));
+
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(d3.axisLeft(y));
+
+  // 8) X-axis label (kept clear of the bottom card edge)
   svg.append("text")
     .attr("class", "axis-label")
     .attr("x", (width + margin.left) / 2)
