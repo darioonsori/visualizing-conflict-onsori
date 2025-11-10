@@ -481,7 +481,7 @@ function drawHistogram(sel, data, year){
 
   // 4) Scales and layout
   const width = 900, height = 360;
-  const margin = { top: 10, right: 22, bottom: 50, left: 56 };
+  const margin = { top: 10, right: 22, bottom: 72, left: 56 };
 
   const x = d3.scaleLinear()
     .domain([0, domainMax])
@@ -543,7 +543,7 @@ function drawHistogram(sel, data, year){
   svg.append("text")
     .attr("class", "axis-label")
     .attr("x", (margin.left + (width - margin.right)) / 2)
-    .attr("y", height - margin.bottom + 34)
+    .attr("y", height - margin.bottom + 48)
     .text("Total conflict-related deaths per country");
 
   // caption note (optional inline)
@@ -551,34 +551,40 @@ function drawHistogram(sel, data, year){
     .text(`Histogram for ${year}. Values above the 99th percentile are clipped to improve readability.`);
 }
 
-/* 7) Violin plot — robusto + median/IQR + log diagnostico */
+/* 7) Violin plot — distribution by conflict type (snapshot year) */
 function drawViolin(sel, data, year) {
+  // 1) Filter country rows for the selected year (exclude aggregates/zeros)
   const rows = data.filter(d => d.year === year && isISO3(d.code) && d.total > 0);
   if (!rows.length) { alertIn(sel, `No data available for ${year}.`); return; }
 
+  // 2) Build tidy data per conflict type
   const tidy = TYPE_ORDER.map(k => ({
     key: k,
-    values: rows.map(r => r[k]).filter(v => Number.isFinite(v) && v > 0)
+    values: rows.map(r => r[k]).filter(v => v > 0)
   }));
-  console.log("[violin] year=", year, "counts per type=", tidy.map(t => [t.key, t.values.length]));
 
-  // Se TUTTI i tipi sono vuoti, mostro un avviso e esco
-  if (tidy.every(t => t.values.length === 0)) {
-    alertIn(sel, `No per-type values > 0 in ${year}.`);
+  // If literally all series are empty, stop gracefully
+  if (tidy.every(d => d.values.length === 0)) {
+    alertIn(sel, `No positive values by type in ${year}.`);
     return;
   }
 
+  // 3) Global X domain — clip at the 99th percentile to tame extreme outliers
+  const allVals = tidy.flatMap(d => d.values).sort(d3.ascending);
+  const q99 = d3.quantile(allVals, 0.99) || d3.max(allVals) || 1;
+
+  // 4) Layout & SVG
   const width = 900, height = 400;
-  const margin = { top: 10, right: 30, bottom: 60, left: 100 };
+  const margin = { top: 10, right: 30, bottom: 78, left: 110 };
 
   const svg = d3.select(sel).html("")
     .append("svg")
     .attr("width", width)
     .attr("height", height);
 
-  const globalMax = d3.max(tidy.flatMap(d => d.values)) || 1;
+  // 5) Scales
   const x = d3.scaleLinear()
-    .domain([0, globalMax])
+    .domain([0, q99]).nice()
     .range([margin.left, width - margin.right]);
 
   const y = d3.scaleBand()
@@ -586,80 +592,104 @@ function drawViolin(sel, data, year) {
     .range([margin.top, height - margin.bottom])
     .padding(0.25);
 
-  // KDE helpers
-  const epanechnikov = k => v => {
-    v /= k;
-    return Math.abs(v) <= 1 ? 0.75 * (1 - v * v) / k : 0;
+  // 6) Light horizontal grid (guides across categories)
+  svg.append("g")
+    .attr("class", "grid")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(
+      d3.axisLeft(y)
+        .tickSize(-(width - margin.left - margin.right))
+        .tickFormat("")
+    )
+    .selectAll("line")
+    .attr("opacity", 0.25);
+
+  // 7) Kernel Density Estimation helpers
+  // Silverman's rule-of-thumb bandwidth with safe fallback
+  const bandwidth = (arr) => {
+    const sd = d3.deviation(arr) || 1;
+    const n  = Math.max(1, arr.length);
+    return 1.06 * sd * Math.pow(n, -1/5);
   };
-  const kde = (kernel, thresholds, data) =>
-    thresholds.map(t => [t, d3.mean(data, d => kernel(t - d))]);
+  const epanechnikov = k => v => {
+    const u = v / k;
+    return Math.abs(u) <= 1 ? 0.75 * (1 - u*u) / k : 0;
+  };
 
-  const thresholds = x.ticks(60);
+  // Thresholds where the density is evaluated. More ticks → smoother violins.
+  const thresholds = x.ticks(100);
 
+  // 8) Draw violins (symmetric around the category center)
   tidy.forEach(d => {
     if (!d.values.length) return;
 
-    // bandwidth robusta (con minimo > 0)
-    const sd = d3.deviation(d.values) || 0;
-    const span = (d3.max(d.values) - d3.min(d.values)) || 0;
-    const bw = Math.max(1, sd > 0 ? 0.4 * sd : span > 0 ? span / 6 : globalMax / 20);
-    console.log(`[violin] ${d.key}: sd=${sd}, span=${span}, bw=${bw}`);
+    // Clamp values at q99 to be consistent with the x-domain
+    const vals = d.values.map(v => Math.min(v, q99));
 
-    const density = kde(epanechnikov(bw), thresholds, d.values);
-    const maxY = d3.max(density, e => e[1]) || 1;
-    const scaleY = d3.scaleLinear().domain([0, maxY]).range([0, y.bandwidth() / 2]);
+    const h = Math.max(0.5, bandwidth(vals)); // guard tiny/narrow samples
+    const kernel = epanechnikov(h);
 
-    const areaTop = d3.area()
+    // KDE → array of [x, density]
+    const density = thresholds.map(t => [t, d3.mean(vals, v => kernel(t - v)) || 0]);
+
+    // Scale density height to fit half the band
+    const maxD = d3.max(density, e => e[1]) || 1;
+    const scaleW = d3.scaleLinear().domain([0, maxD]).range([0, y.bandwidth() / 2]);
+
+    // Symmetric area (y0 below center, y1 above center)
+    const cy = y(d.key) + y.bandwidth() / 2;
+    const area = d3.area()
       .x(e => x(e[0]))
-      .y0(y(d.key) + y.bandwidth() / 2)
-      .y1(e => y(d.key) + y.bandwidth() / 2 - scaleY(e[1]))
-      .curve(d3.curveCatmullRom);
-
-    const areaBottom = d3.area()
-      .x(e => x(e[0]))
-      .y0(y(d.key) + y.bandwidth() / 2)
-      .y1(e => y(d.key) + y.bandwidth() / 2 + scaleY(e[1]))
+      .y0(e => cy + scaleW(e[1]))
+      .y1(e => cy - scaleW(e[1]))
       .curve(d3.curveCatmullRom);
 
     svg.append("path")
       .datum(density)
       .attr("fill", TYPE_COLORS(d.key))
-      .attr("opacity", 0.6)
+      .attr("opacity", 0.65)
       .attr("stroke", "#333")
       .attr("stroke-width", 0.8)
-      .attr("d", areaTop);
+      .attr("d", area)
+      .on("mousemove", (ev) => {
+        // Show simple stats on hover
+        const sVals = vals.slice().sort(d3.ascending);
+        const q1  = d3.quantileSorted(sVals, 0.25) || 0;
+        const med = d3.quantileSorted(sVals, 0.50) || 0;
+        const q3  = d3.quantileSorted(sVals, 0.75) || 0;
+        const fmt = d3.format(",");
+        tip.style("opacity", 1)
+          .html(
+            `<strong>${d.key}</strong><br/>
+             n = ${sVals.length}<br/>
+             Q1–Median–Q3: ${fmt(Math.round(q1))} – ${fmt(Math.round(med))} – ${fmt(Math.round(q3))}`
+          )
+          .style("left", (ev.pageX) + "px")
+          .style("top", (ev.pageY) + "px");
+      })
+      .on("mouseleave", () => tip.style("opacity", 0));
 
-    svg.append("path")
-      .datum(density)
-      .attr("fill", TYPE_COLORS(d.key))
-      .attr("opacity", 0.6)
-      .attr("stroke", "#333")
-      .attr("stroke-width", 0.8)
-      .attr("d", areaBottom);
+    // --- Overlay: IQR line + median dot (matches the caption)
+    const sVals = vals.slice().sort(d3.ascending);
+    const q1  = d3.quantileSorted(sVals, 0.25) || 0;
+    const med = d3.quantileSorted(sVals, 0.50) || 0;
+    const q3  = d3.quantileSorted(sVals, 0.75) || 0;
 
-    // Quartili + mediana
-    const sorted = d.values.slice().sort(d3.ascending);
-    const q1 = d3.quantileSorted(sorted, 0.25) || 0;
-    const med = d3.quantileSorted(sorted, 0.50) || 0;
-    const q3 = d3.quantileSorted(sorted, 0.75) || 0;
-
+    // IQR horizontal segment
     svg.append("line")
-      .attr("x1", x(q1))
-      .attr("x2", x(q3))
-      .attr("y1", y(d.key) + y.bandwidth() / 2)
-      .attr("y2", y(d.key) + y.bandwidth() / 2)
-      .attr("stroke", "#000")
-      .attr("stroke-width", 2);
+      .attr("x1", x(q1)).attr("x2", x(q3))
+      .attr("y1", cy).attr("y2", cy)
+      .attr("stroke", "#111").attr("stroke-width", 2);
 
+    // Median dot
     svg.append("circle")
-      .attr("cx", x(med))
-      .attr("cy", y(d.key) + y.bandwidth() / 2)
-      .attr("r", 4)
+      .attr("cx", x(med)).attr("cy", cy)
+      .attr("r", 3.2)
       .attr("fill", "#fff")
-      .attr("stroke", "#000");
+      .attr("stroke", "#111").attr("stroke-width", 1);
   });
 
-  // Assi
+  // 9) Axes
   svg.append("g")
     .attr("class", "axis")
     .attr("transform", `translate(0,${height - margin.bottom})`)
@@ -670,10 +700,11 @@ function drawViolin(sel, data, year) {
     .attr("transform", `translate(${margin.left},0)`)
     .call(d3.axisLeft(y));
 
+  // 10) X-axis label (spaced to avoid clipping)
   svg.append("text")
-    .attr("x", (width + margin.left) / 2)
-    .attr("y", height - 10)
-    .attr("text-anchor", "middle")
     .attr("class", "axis-label")
+    .attr("x", (width + margin.left) / 2)
+    .attr("y", height - margin.bottom + 52)
+    .attr("text-anchor", "middle")
     .text("Deaths per country");
 }
