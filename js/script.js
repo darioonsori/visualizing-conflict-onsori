@@ -38,19 +38,30 @@ function alertIn(sel, msg){
 // ISO3 guard (filters out regions/aggregates)
 const isISO3 = code => typeof code === "string" && /^[A-Z]{3}$/.test(code);
 
-// Heuristic header detection (tolerant to case/spacing)
+// Heuristic header detection (robust to long OWID names, hyphens, spaces)
 function detectColumns(headers){
-  const low = headers.map(h => h.toLowerCase());
-  const find = kw => headers[low.findIndex(x => x.includes(kw))];
+  const norm = s => s.toLowerCase()
+    .replace(/[–—−-]/g, "-")     // varianti di trattino
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const H = headers.map(h => ({ raw: h, n: norm(h) }));
+  const pick = (...needles) => {
+    const i = H.findIndex(({n}) => needles.some(nd => n.includes(nd)));
+    return i >= 0 ? H[i].raw : null;
+    };
+
   return {
-    entity:        find("entity")      || "Entity",
-    code:          find("code")        || "Code",
-    year:          find("year")        || "Year",
-    interstate:    find("conflict type: interstate"),
-    intrastate:    find("conflict type: intrastate"),
-    extrasystemic: find("conflict type: extrasystemic"),
-    nonstate:      find("conflict type: non-state"),
-    onesided:      find("conflict type: one-sided"),
+    entity:        pick("entity") || "Entity",
+    code:          pick("code")   || "Code",
+    year:          pick("year")   || "Year",
+
+    // colonne OWID: "… - Conflict type: interstate", ecc.
+    interstate:    pick("conflict type: interstate", " interstate"),
+    intrastate:    pick("conflict type: intrastate", " intrastate"),
+    extrasystemic: pick("conflict type: extrasystemic", " extrasystemic"),
+    nonstate:      pick("conflict type: non-state", " non state", " non-state conflict"),
+    onesided:      pick("conflict type: one-sided", " one-sided violence", " one sided"),
   };
 }
 
