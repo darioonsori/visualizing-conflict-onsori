@@ -198,7 +198,7 @@ text.value { font-weight: 600; }
 
 /* --- Charts: small visual helpers --- */
 .card svg { 
-  overflow: visible;            /* permette a label/tooltip di uscire dal box */
+  overflow: visible;         
 }
 
 .axis-label { 
@@ -207,7 +207,7 @@ text.value { font-weight: 600; }
 }
 
 .grid line { 
-  shape-rendering: crispEdges;  /* linee di griglia nitide */
+  shape-rendering: crispEdges;  
   stroke: #000;
   stroke-opacity: .12;
 }
