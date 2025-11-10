@@ -551,38 +551,30 @@ function drawHistogram(sel, data, year){
     .text(`Histogram for ${year}. Values above the 99th percentile are clipped to improve readability.`);
 }
 
-/* 7) Violin plot — distribution by conflict type (snapshot year) */
 function drawViolin(sel, data, year) {
-  // 1) Filter country rows for the selected year (exclude aggregates/zeros)
   const rows = data.filter(d => d.year === year && isISO3(d.code) && d.total > 0);
   if (!rows.length) { alertIn(sel, `No data available for ${year}.`); return; }
 
-  // 2) Build tidy data per conflict type
   const tidy = TYPE_ORDER.map(k => ({
     key: k,
     values: rows.map(r => r[k]).filter(v => v > 0)
   }));
-
-  // If literally all series are empty, stop gracefully
   if (tidy.every(d => d.values.length === 0)) {
     alertIn(sel, `No positive values by type in ${year}.`);
     return;
   }
 
-  // 3) Global X domain — clip at the 99th percentile to tame extreme outliers
   const allVals = tidy.flatMap(d => d.values).sort(d3.ascending);
   const q99 = d3.quantile(allVals, 0.99) || d3.max(allVals) || 1;
 
-  // 4) Layout & SVG
   const width = 900, height = 400;
-  const margin = { top: 10, right: 30, bottom: 78, left: 110 };
+  const margin = { top: 10, right: 30, bottom: 90, left: 110 };
 
   const svg = d3.select(sel).html("")
     .append("svg")
     .attr("width", width)
     .attr("height", height);
 
-  // 5) Scales
   const x = d3.scaleLinear()
     .domain([0, q99]).nice()
     .range([margin.left, width - margin.right]);
@@ -592,20 +584,14 @@ function drawViolin(sel, data, year) {
     .range([margin.top, height - margin.bottom])
     .padding(0.25);
 
-  // 6) Light horizontal grid (guides across categories)
+  // Grid orizzontale leggera
   svg.append("g")
     .attr("class", "grid")
     .attr("transform", `translate(${margin.left},0)`)
-    .call(
-      d3.axisLeft(y)
-        .tickSize(-(width - margin.left - margin.right))
-        .tickFormat("")
-    )
-    .selectAll("line")
-    .attr("opacity", 0.25);
+    .call(d3.axisLeft(y).tickSize(-(width - margin.left - margin.right)).tickFormat(""))
+    .selectAll("line").attr("opacity", 0.25);
 
-  // 7) Kernel Density Estimation helpers
-  // Silverman's rule-of-thumb bandwidth with safe fallback
+  // KDE helpers
   const bandwidth = (arr) => {
     const sd = d3.deviation(arr) || 1;
     const n  = Math.max(1, arr.length);
@@ -615,28 +601,20 @@ function drawViolin(sel, data, year) {
     const u = v / k;
     return Math.abs(u) <= 1 ? 0.75 * (1 - u*u) / k : 0;
   };
-
-  // Thresholds where the density is evaluated. More ticks → smoother violins.
   const thresholds = x.ticks(100);
 
-  // 8) Draw violins (symmetric around the category center)
+  // Violini simmetrici + overlay (IQR & mediana)
   tidy.forEach(d => {
     if (!d.values.length) return;
 
-    // Clamp values at q99 to be consistent with the x-domain
     const vals = d.values.map(v => Math.min(v, q99));
-
-    const h = Math.max(0.5, bandwidth(vals)); // guard tiny/narrow samples
+    const h = Math.max(0.5, bandwidth(vals));
     const kernel = epanechnikov(h);
-
-    // KDE → array of [x, density]
     const density = thresholds.map(t => [t, d3.mean(vals, v => kernel(t - v)) || 0]);
 
-    // Scale density height to fit half the band
     const maxD = d3.max(density, e => e[1]) || 1;
     const scaleW = d3.scaleLinear().domain([0, maxD]).range([0, y.bandwidth() / 2]);
 
-    // Symmetric area (y0 below center, y1 above center)
     const cy = y(d.key) + y.bandwidth() / 2;
     const area = d3.area()
       .x(e => x(e[0]))
@@ -652,7 +630,6 @@ function drawViolin(sel, data, year) {
       .attr("stroke-width", 0.8)
       .attr("d", area)
       .on("mousemove", (ev) => {
-        // Show simple stats on hover
         const sVals = vals.slice().sort(d3.ascending);
         const q1  = d3.quantileSorted(sVals, 0.25) || 0;
         const med = d3.quantileSorted(sVals, 0.50) || 0;
@@ -669,19 +646,16 @@ function drawViolin(sel, data, year) {
       })
       .on("mouseleave", () => tip.style("opacity", 0));
 
-    // --- Overlay: IQR line + median dot (matches the caption)
     const sVals = vals.slice().sort(d3.ascending);
     const q1  = d3.quantileSorted(sVals, 0.25) || 0;
     const med = d3.quantileSorted(sVals, 0.50) || 0;
     const q3  = d3.quantileSorted(sVals, 0.75) || 0;
 
-    // IQR horizontal segment
     svg.append("line")
       .attr("x1", x(q1)).attr("x2", x(q3))
       .attr("y1", cy).attr("y2", cy)
       .attr("stroke", "#111").attr("stroke-width", 2);
 
-    // Median dot
     svg.append("circle")
       .attr("cx", x(med)).attr("cy", cy)
       .attr("r", 3.2)
@@ -689,7 +663,7 @@ function drawViolin(sel, data, year) {
       .attr("stroke", "#111").attr("stroke-width", 1);
   });
 
-  // 9) Axes
+  // Assi
   svg.append("g")
     .attr("class", "axis")
     .attr("transform", `translate(0,${height - margin.bottom})`)
@@ -700,11 +674,11 @@ function drawViolin(sel, data, year) {
     .attr("transform", `translate(${margin.left},0)`)
     .call(d3.axisLeft(y));
 
-  // 10) X-axis label (spaced to avoid clipping)
+  // Label asse X (non si taglia più)
   svg.append("text")
     .attr("class", "axis-label")
     .attr("x", (width + margin.left) / 2)
-    .attr("y", height - margin.bottom + 52)
+    .attr("y", height - margin.bottom + 58)
     .attr("text-anchor", "middle")
     .text("Deaths per country");
 }
