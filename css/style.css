@@ -43,7 +43,7 @@ section { margin: 24px 0; }
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: var(--shadow);
-  padding: 14px 16px 10px;
+  padding: 14px 16px 18px;
   margin: 14px 0;
 }
 .card h3 {
@@ -62,7 +62,7 @@ section { margin: 24px 0; }
 #bar-top10, #grouped, #heatmap, #stack100, #waffle,
 #histogram, #violin, #boxplot {
   width: 100%;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* Axes, grid, labels inside SVGs */
