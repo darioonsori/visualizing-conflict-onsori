@@ -551,13 +551,13 @@ function drawHistogram(sel, data, year){
     .text(`Histogram for ${year}. Values above the 99th percentile are clipped to improve readability.`);
 }
 
-/* 7) Violin plot — distribution by conflict type */
+/* 7) Violin plot — distribution by conflict type (robusto + median/IQR) */
 function drawViolin(sel, data, year) {
-  // 1) Filter data for selected year and exclude aggregates
+  // 1) Filtra righe (nazioni solo, anno scelto, tot > 0)
   const rows = data.filter(d => d.year === year && isISO3(d.code) && d.total > 0);
   if (!rows.length) { alertIn(sel, `No data available for ${year}.`); return; }
 
-  // 2) Prepare data by type
+  // 2) Dati per tipo
   const tidy = TYPE_ORDER.map(k => ({
     key: k,
     values: rows.map(r => r[k]).filter(v => v > 0)
@@ -572,7 +572,7 @@ function drawViolin(sel, data, year) {
     .attr("width", width)
     .attr("height", height);
 
-  // 4) Scales
+  // 4) Scale
   const x = d3.scaleLinear()
     .domain([0, d3.max(tidy.flatMap(d => d.values)) || 1])
     .range([margin.left, width - margin.right]);
@@ -582,25 +582,41 @@ function drawViolin(sel, data, year) {
     .range([margin.top, height - margin.bottom])
     .padding(0.25);
 
-  // 5) Kernel density estimation
+  // 5) KDE helpers
+  const epanechnikov = k => v => {
+    v /= k;
+    return Math.abs(v) <= 1 ? 0.75 * (1 - v * v) / k : 0;
+  };
   const kde = (kernel, thresholds, data) =>
     thresholds.map(t => [t, d3.mean(data, d => kernel(t - d))]);
 
-  const epanechnikov = k => v => Math.abs(v /= k) <= 1 ? 0.75 * (1 - v * v) / k : 0;
+  const thresholds = x.ticks(60); // un po’ più fine
 
-  const thresholds = x.ticks(50);
-
-  // 6) Draw violins
+  // 6) Disegno dei violini (simmetrici) + median/IQR
   tidy.forEach(d => {
     if (!d.values.length) return;
-    const density = kde(epanechnikov(0.4 * d3.deviation(d.values)), thresholds, d.values);
-    const maxY = d3.max(density, d => d[1]) || 1;
-    const scaleY = d3.scaleLinear().range([0, y.bandwidth() / 2]).domain([0, maxY]);
 
-    const area = d3.area()
-      .x(a => x(a[0]))
+    // bandwidth robusta: fallback se sd è undefined/0
+    const sd = d3.deviation(d.values) || 0;
+    const span = (d3.max(d.values) - d3.min(d.values)) || 1;
+    const bw = sd > 0 ? 0.4 * sd : Math.max(1, span / 6);
+
+    const density = kde(epanechnikov(bw), thresholds, d.values);
+    const maxY = d3.max(density, e => e[1]) || 1;
+    const scaleY = d3.scaleLinear().domain([0, maxY]).range([0, y.bandwidth() / 2]);
+
+    // area superiore
+    const areaTop = d3.area()
+      .x(e => x(e[0]))
       .y0(y(d.key) + y.bandwidth() / 2)
-      .y1(a => y(d.key) + y.bandwidth() / 2 - scaleY(a[1]))
+      .y1(e => y(d.key) + y.bandwidth() / 2 - scaleY(e[1]))
+      .curve(d3.curveCatmullRom);
+
+    // area inferiore (mirror)
+    const areaBottom = d3.area()
+      .x(e => x(e[0]))
+      .y0(y(d.key) + y.bandwidth() / 2)
+      .y1(e => y(d.key) + y.bandwidth() / 2 + scaleY(e[1]))
       .curve(d3.curveCatmullRom);
 
     svg.append("path")
@@ -609,10 +625,41 @@ function drawViolin(sel, data, year) {
       .attr("opacity", 0.6)
       .attr("stroke", "#333")
       .attr("stroke-width", 0.8)
-      .attr("d", area);
+      .attr("d", areaTop);
+
+    svg.append("path")
+      .datum(density)
+      .attr("fill", TYPE_COLORS(d.key))
+      .attr("opacity", 0.6)
+      .attr("stroke", "#333")
+      .attr("stroke-width", 0.8)
+      .attr("d", areaBottom);
+
+    // Quartili e mediana
+    const sorted = d.values.slice().sort(d3.ascending);
+    const q1 = d3.quantileSorted(sorted, 0.25) || 0;
+    const med = d3.quantileSorted(sorted, 0.50) || 0;
+    const q3 = d3.quantileSorted(sorted, 0.75) || 0;
+
+    // IQR line (orizzontale) al centro del violino
+    svg.append("line")
+      .attr("x1", x(q1))
+      .attr("x2", x(q3))
+      .attr("y1", y(d.key) + y.bandwidth() / 2)
+      .attr("y2", y(d.key) + y.bandwidth() / 2)
+      .attr("stroke", "#000")
+      .attr("stroke-width", 2);
+
+    // Median dot (bianco con bordo)
+    svg.append("circle")
+      .attr("cx", x(med))
+      .attr("cy", y(d.key) + y.bandwidth() / 2)
+      .attr("r", 4)
+      .attr("fill", "#fff")
+      .attr("stroke", "#000");
   });
 
-  // 7) Axes
+  // 7) Assi
   svg.append("g")
     .attr("class", "axis")
     .attr("transform", `translate(0,${height - margin.bottom})`)
@@ -623,7 +670,7 @@ function drawViolin(sel, data, year) {
     .attr("transform", `translate(${margin.left},0)`)
     .call(d3.axisLeft(y));
 
-  // 8) Labels
+  // 8) Label asse X
   svg.append("text")
     .attr("x", (width + margin.left) / 2)
     .attr("y", height - 10)
