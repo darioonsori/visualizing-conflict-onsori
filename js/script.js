@@ -712,7 +712,7 @@ function drawBoxplot(sel, data, year) {
 
   const tidy = TYPE_ORDER.map(k => ({
     key: k,
-    values: rows.map(r => r[k]).filter(v => v > 0)
+    values: rows.map(r => +r[k] || 0).filter(v => v > 0)
   }));
   if (tidy.every(d => d.values.length === 0)) {
     alertIn(sel, `No positive values by type in ${year}.`);
@@ -720,8 +720,14 @@ function drawBoxplot(sel, data, year) {
   }
 
   // 2) Shared x-domain (99th percentile clip for readability, like the violin)
-  const allVals = tidy.flatMap(d => d.values).sort(d3.ascending);
-  const q99 = d3.quantile(allVals, 0.99) || d3.max(allVals) || 1;
+  const allVals = tidy.flatMap(d => d.values).slice().sort(d3.ascending);
+  // robust fallbacks to avoid NaN/undefined
+  const q99 = d3.quantileSorted(allVals, 0.99) ?? d3.max(allVals) ?? 1;
+  const xMax = Math.max(1, q99);
+
+  console.debug("[boxplot] year:", year, 
+                "nAll:", allVals.length, 
+                "q99:", q99, "xMax:", xMax);
 
   // 3) Layout and scales
   const width = 900, height = 360;
@@ -733,7 +739,7 @@ function drawBoxplot(sel, data, year) {
     .attr("height", height);
 
   const x = d3.scaleLinear()
-    .domain([0, q99]).nice()
+    .domain([0, xMax]).nice()
     .range([margin.left, width - margin.right]);
 
   const y = d3.scaleBand()
