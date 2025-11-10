@@ -848,7 +848,7 @@ function drawBoxplot(sel, data, year) {
     .attr("stroke", "#111")
     .attr("stroke-width", 2);
 
-  // Optional: outlier points (subtle and uncluttered)
+  // Outlier points (subtle and uncluttered)
   g.selectAll("g.outliers").data(stats).join("g")
     .attr("class", "outliers")
     .each(function(d) {
@@ -868,6 +868,37 @@ function drawBoxplot(sel, data, year) {
           })
           .on("mouseleave", () => tip.style("opacity", 0));
     });
+
+  // 6b) Hover fallback — show a tooltip even when the box width is ~0 (e.g., Extrasystemic)
+  const MIN_VIS_WIDTH = 3; // px
+  const needOverlay = stats.filter(s =>
+    s.n === 0 || (x(Math.min(s.q3, q99)) - x(Math.min(s.q1, q99)) < MIN_VIS_WIDTH)
+  );
+
+  svg.append("g")
+    .selectAll("rect.hoverband")
+    .data(needOverlay)
+    .join("rect")
+      .attr("class", "hoverband")
+      .attr("x", margin.left)
+      .attr("y", d => y(d.key))
+      .attr("width", width - margin.left - margin.right)
+      .attr("height", y.bandwidth())
+      .attr("fill", "transparent")
+      .on("mousemove", (ev, d) => {
+        const fmt = d3.format(",");
+        const html = d.n > 0
+          ? `<strong>${d.key}</strong><br/>
+             n = ${d.n}<br/>
+             Q1–Median–Q3: ${fmt(Math.round(d.q1))} – ${fmt(Math.round(d.med))} – ${fmt(Math.round(d.q3))}<br/>
+             Whiskers: ${fmt(Math.round(d.low))} – ${fmt(Math.round(d.high))}`
+          : `<strong>${d.key}</strong><br/>No positive country values in ${year}.`;
+        tip.style("opacity", 1)
+          .html(html)
+          .style("left", (ev.pageX) + "px")
+          .style("top",  (ev.pageY) + "px");
+      })
+      .on("mouseleave", () => tip.style("opacity", 0));
 
   // 7) Axes
   svg.append("g")
