@@ -58,6 +58,25 @@ section { margin: 24px 0; }
   margin: 8px 4px 2px;
 }
 
+/* One-off informational callout (for Extrasystemic note) */
+.callout {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: #eef6ff;
+  border: 1px solid #bfdbfe;
+  color: #1e3a8a;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin: 12px 0 6px;
+  box-shadow: var(--shadow);
+}
+.callout strong { color: #1e40af; }
+.callout .icon {
+  flex: none;
+  width: 18px; height: 18px; margin-top: 2px;
+}
+
 /* Chart host blocks (SVG gets appended inside) */
 #bar-top10, #grouped, #heatmap, #stack100, #waffle,
 #histogram, #violin, #boxplot {
@@ -67,13 +86,11 @@ section { margin: 24px 0; }
 
 /* Axes, grid, labels inside SVGs */
 .axis text { fill: #374151; font-size: 12px; }
-.axis path, .axis line { stroke: #d1d5db; }
-.grid line { stroke: #e5e7eb; }
-
-/* Value labels near bars */
+.axis path, .axis line { stroke: #d1d5db; shape-rendering: crispEdges; }
+.grid line { stroke: #000; stroke-opacity: .12; shape-rendering: crispEdges; }
 text.value { font-weight: 600; }
 
-/* Legend (rendered by JS below grouped / stacked) */
+/* Legend (pills) */
 .legend {
   display: flex;
   gap: 8px 12px;
@@ -100,7 +117,7 @@ text.value { font-weight: 600; }
   border: 1px solid rgba(0,0,0,.08);
 }
 
-/* Tooltip used across charts */
+/* Tooltip (shared) */
 .tooltip {
   position: absolute;
   pointer-events: none;
@@ -112,6 +129,7 @@ text.value { font-weight: 600; }
   line-height: 1.35;
   box-shadow: 0 6px 16px rgba(0,0,0,.18);
   transform: translate(10px, -14px);
+  z-index: 10;
 }
 
 /* Chart captions */
@@ -158,29 +176,10 @@ text.value { font-weight: 600; }
   display: block;
 }
 
-.violin-shape {
-  fill-opacity: 0.7;
-  stroke-width: 0.8px;
-}
-
-.box rect.box {
-  fill-opacity: 0.25;
-  stroke-width: 1.2px;
-}
-
-.box line.median {
-  stroke-width: 2px;
-}
-
-.axis path,
-.axis line {
-  shape-rendering: crispEdges;
-}
-
-.axis text {
-  font-size: 12px;
-  fill: #374151;
-}
+/* Violin & boxplot fine-tuning */
+.violin-shape { fill-opacity: 0.7; stroke-width: 0.8px; }
+.box rect.box { fill-opacity: 0.25; stroke-width: 1.2px; }
+.box line.median { stroke-width: 2px; }
 
 .axis-label {
   fill: #555;
@@ -189,37 +188,19 @@ text.value { font-weight: 600; }
   dominant-baseline: hanging;
 }
 
+/* Make SVG overflow visible inside cards (tooltips/labels) */
+.card svg { overflow: visible; }
+
 /* Responsive tweaks */
 @media (max-width: 640px) {
   h1 { font-size: 22px; }
   .card { padding: 12px; }
   .pill { font-size: 11px; padding: 3px 8px; }
+  .axis text { font-size: 11px; }
 }
 
-/* --- Charts: small visual helpers --- */
-.card svg { 
-  overflow: visible;         
-}
-
-.axis-label { 
-  fill: #555; 
-  font-size: 12px; 
-}
-
-.grid line { 
-  shape-rendering: crispEdges;  
-  stroke: #000;
-  stroke-opacity: .12;
-}
-
-.tooltip {
-  position: absolute;
-  pointer-events: none;
-  background: #111827;
-  color: #fff;
-  padding: 6px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  line-height: 1.3;
-  transform: translate(8px, -8px);
+/* Print helpers */
+@media print {
+  .tooltip { display: none !important; }
+  .callout { break-inside: avoid; }
 }
