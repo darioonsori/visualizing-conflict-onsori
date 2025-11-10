@@ -112,6 +112,9 @@ d3.csv(DATA_PATH, d3.autoType).then(raw => {
   // 5) Waffle (World composition for SNAPSHOT_YEAR)
   drawWaffle("#waffle", worldOnly, SNAPSHOT_YEAR);
 
+  // 6) Histogram (distributions section)
+  drawHistogram("#histogram", countries, SNAPSHOT_YEAR);
+
 }).catch(err => {
   console.error(err);
   ["#bar-top10","#grouped","#heatmap","#stack100","#waffle"].forEach(sel =>
@@ -440,3 +443,97 @@ function drawWaffle(sel, worldRows, year){
     item.append("span").text(k);
   });
 }
+
+/* 6) Histogram — total conflict-related deaths per country (snapshot year) */
+function drawHistogram(sel, data, year){
+  // 1) Prepare values: one total per country for the selected year
+  const rows = data.filter(d => d.year === year && d.total > 0);
+  if (!rows.length){ alertIn(sel, `No country data for year ${year}.`); return; }
+
+  const values = rows.map(d => d.total);
+
+  // 2) Guard the heavy right tail with a 99th percentile clip (keeps the chart readable)
+  const q99 = d3.quantile(values.slice().sort(d3.ascending), 0.99) || d3.max(values);
+  const domainMax = Math.max(1, q99); // avoid 0 in degenerate cases
+
+  // 3) Build bins (20 is a good default for presentation)
+  const bin = d3.bin()
+    .domain([0, domainMax])
+    .thresholds(20);
+
+  // Clamp values to the domain [0, domainMax] before binning
+  const clamped = values.map(v => Math.min(v, domainMax));
+  const bins = bin(clamped);
+
+  // 4) Scales and layout
+  const width = 900, height = 360;
+  const margin = { top: 10, right: 22, bottom: 50, left: 56 };
+
+  const x = d3.scaleLinear()
+    .domain([0, domainMax])
+    .range([margin.left, width - margin.right]);
+
+  const y = d3.scaleLinear()
+    .domain([0, d3.max(bins, d => d.length) || 1]).nice()
+    .range([height - margin.bottom, margin.top]);
+
+  // 5) Draw
+  const svg = d3.select(sel).html("").append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  // grid (horizontal)
+  svg.append("g")
+    .attr("class", "grid")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(d3.axisLeft(y)
+      .ticks(5)
+      .tickSize(-(width - margin.left - margin.right))
+      .tickFormat(""))
+    .selectAll("line")
+    .attr("opacity", 0.35);
+
+  // bars
+  const bar = svg.append("g")
+    .selectAll("rect")
+    .data(bins)
+    .join("rect")
+      .attr("x", d => x(d.x0) + 1)
+      .attr("y", d => y(d.length))
+      .attr("width", d => Math.max(0, x(d.x1) - x(d.x0) - 2))
+      .attr("height", d => y(0) - y(d.length))
+      .attr("fill", "#8aa6ff")
+      .on("mousemove", (ev, d) => {
+        const fmt = d3.format(",");
+        const lo = fmt(Math.round(d.x0));
+        const hi = fmt(Math.round(d.x1));
+        tip.style("opacity", 1)
+          .html(`<strong>Bin:</strong> ${lo} – ${hi}<br/><strong>Countries:</strong> ${d.length}`)
+          .style("left", (ev.pageX) + "px")
+          .style("top", (ev.pageY) + "px");
+      })
+      .on("mouseleave", () => tip.style("opacity", 0));
+
+  // axes
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(0,${height - margin.bottom})`)
+    .call(d3.axisBottom(x).ticks(6, "~s"));
+
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(d3.axisLeft(y).ticks(5));
+
+  // x-axis label
+  svg.append("text")
+    .attr("class", "axis-label")
+    .attr("x", (margin.left + (width - margin.right)) / 2)
+    .attr("y", height - margin.bottom + 34)
+    .text("Total conflict-related deaths per country");
+
+  // caption note (optional inline)
+  d3.select(sel).append("div").attr("class", "caption")
+    .text(`Histogram for ${year}. Values above the 99th percentile are clipped to improve readability.`);
+}
+
