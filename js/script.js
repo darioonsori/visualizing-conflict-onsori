@@ -1,16 +1,24 @@
 /*******************************************************
  * Visualizing Conflict and Human Suffering — JS bundle
- * Datasets: UCDP via Our World in Data
- * Charts (comparison category):
- *  1) Top-10 barchart (absolute)            → #bar-top10
- *  2) Grouped barchart (selected countries) → #grouped
- *  3) Heatmap (World totals, type × year)   → #heatmap
- *  4) 100% stacked barchart (World shares)  → #stack100
- *  5) Waffle chart (World composition Y)    → #waffle
+ * Source: UCDP via Our World in Data (OWID)
+ *
+ * Charts
+ *  1) Top-10 by total deaths (countries)           → #bar-top10
+ *  2) By type for selected countries (grouped)     → #grouped
+ *  3) World totals by type × year (heatmap)        → #heatmap
+ *  4) World shares by type over time (100% stack)  → #stack100
+ *  5) World composition in Y (waffle)              → #waffle
+ *  6) Country totals in Y (histogram)              → #histogram
+ *  7) Distribution by type in Y (violin)           → #violin
+ *  8) Country distribution by type in Y (boxplot)  → #boxplot
+ *
+ * Notes
+ *  – “Extrasystemic” conflicts are kept for completeness; modern years are typically zero.
+ *  – Regions/aggregates are filtered out via an ISO3 guard.
  *******************************************************/
 
 /* ---------- Config ---------- */
-const DATA_PATH = "data/conflict_deaths_by_type.csv"; // must match repo path
+const DATA_PATH = "data/conflict_deaths_by_type.csv"; // path in the repo
 const SNAPSHOT_YEAR = 2023;
 const FOCUS_COUNTRIES = ["Ukraine","Palestine","Sudan","Mexico","Burkina Faso"];
 
@@ -20,14 +28,14 @@ const TYPE_COLORS = d3.scaleOrdinal()
   .range(["#6c8ae4","#f28e2b","#edc948","#59a14f","#e15759"]);
 
 /* ---------- Shared tooltip ---------- */
-const tip = d3.select("body")
-  .append("div")
+// Single floating tooltip reused by all charts
+const tip = d3.select("body").append("div")
   .attr("class","tooltip")
   .style("opacity", 0);
 
 /* ---------- Utilities ---------- */
 
-// Show a friendly alert inside a target container
+// Inject a lightweight message inside the target container
 function alertIn(sel, msg){
   const box = d3.select(sel);
   if (!box.empty()){
@@ -35,28 +43,22 @@ function alertIn(sel, msg){
   }
 }
 
-// ISO3 guard (filters out regions/aggregates)
+// True ISO-3 code → lets us drop regions/aggregates
 const isISO3 = code => typeof code === "string" && /^[A-Z]{3}$/.test(code);
 
-// Heuristic header detection (robust to long OWID names, hyphens, spaces)
+// Make column discovery resilient to OWID header wording
 function detectColumns(headers){
-  const norm = s => s.toLowerCase()
-    .replace(/[–—−-]/g, "-")     // varianti di trattino
-    .replace(/\s+/g, " ")
-    .trim();
-
+  const norm = s => s.toLowerCase().replace(/[–—−-]/g, "-").replace(/\s+/g, " ").trim();
   const H = headers.map(h => ({ raw: h, n: norm(h) }));
   const pick = (...needles) => {
     const i = H.findIndex(({n}) => needles.some(nd => n.includes(nd)));
     return i >= 0 ? H[i].raw : null;
-    };
-
+  };
   return {
     entity:        pick("entity") || "Entity",
     code:          pick("code")   || "Code",
     year:          pick("year")   || "Year",
-
-    // colonne OWID: "… - Conflict type: interstate", ecc.
+    // OWID style: “… - Conflict type: interstate”, etc.
     interstate:    pick("conflict type: interstate", " interstate"),
     intrastate:    pick("conflict type: intrastate", " intrastate"),
     extrasystemic: pick("conflict type: extrasystemic", " extrasystemic"),
@@ -65,7 +67,7 @@ function detectColumns(headers){
   };
 }
 
-// Row mapping → normalized field names
+// Normalize one CSV row into canonical fields and compute a total
 function mapRow(d, C){
   const r = {
     entity: d[C.entity],
@@ -88,13 +90,12 @@ d3.csv(DATA_PATH, d3.autoType).then(raw => {
   const headers = Object.keys(raw[0]);
   const C = detectColumns(headers);
 
+  // Minimal set needed to render the page
   const required = [C.entity, C.code, C.year, C.intrastate, C.nonstate, C.onesided];
   if (required.some(x => !x)) {
-    alertIn("#bar-top10", "Could not detect required columns in the CSV.");
-    alertIn("#grouped",  "Could not detect required columns in the CSV.");
-    alertIn("#heatmap",  "Could not detect required columns in the CSV.");
-    alertIn("#stack100", "Could not detect required columns in the CSV.");
-    alertIn("#waffle",   "Could not detect required columns in the CSV.");
+    ["#bar-top10","#grouped","#heatmap","#stack100","#waffle"].forEach(sel =>
+      alertIn(sel, "Could not detect required columns in the CSV.")
+    );
     return;
   }
 
@@ -102,40 +103,40 @@ d3.csv(DATA_PATH, d3.autoType).then(raw => {
   const countries = rows.filter(r => isISO3(r.code) && r.entity !== "World");
   const worldOnly = rows.filter(r => r.entity === "World");
 
-  // Update year labels in the page
+  // Year labels in the HTML
   d3.select("#year-top").text(SNAPSHOT_YEAR);
   d3.select("#year-grouped").text(SNAPSHOT_YEAR);
   d3.select("#year-waffle").text(SNAPSHOT_YEAR);
   d3.select("#waffle-year").text(SNAPSHOT_YEAR);
 
-  // 1) Top-10
+  // 1) Top-10 countries (absolute totals, Y)
   drawTop10Bar("#bar-top10", countries, SNAPSHOT_YEAR);
 
-  // 2) Grouped (selected countries)
+  // 2) Selected countries by conflict type (grouped, Y)
   drawGroupedByType("#grouped", countries, SNAPSHOT_YEAR, FOCUS_COUNTRIES);
 
-  // 3) Heatmap (World only)
+  // 3) World totals by type × year (heatmap)
   drawWorldHeatmap("#heatmap", worldOnly);
 
-  // 4) 100% stacked shares (World over time)
+  // 4) World shares by type over time (100% stacked)
   drawStacked100("#stack100", worldOnly);
 
-  // 5) Waffle (World composition for SNAPSHOT_YEAR)
+  // 5) World composition in Y (waffle)
   drawWaffle("#waffle", worldOnly, SNAPSHOT_YEAR);
 
-  // 6) Histogram (distributions section)
+  // 6) Country totals in Y (histogram)
   drawHistogram("#histogram", countries, SNAPSHOT_YEAR);
-  
-  // 7) Violin plot
+
+  // 7) Distribution by type in Y (violin)
   drawViolin("#violin", countries, SNAPSHOT_YEAR);
 
-  // 8) Boxplot — country-level distribution by conflict type
+  // 8) Country distribution by type in Y (boxplot)
   drawBoxplot("#boxplot", countries, SNAPSHOT_YEAR);
 
 }).catch(err => {
   console.error(err);
   ["#bar-top10","#grouped","#heatmap","#stack100","#waffle"].forEach(sel =>
-    alertIn(sel, "Failed to load the CSV. Make sure it is at data/conflict_deaths_by_type.csv")
+    alertIn(sel, "Failed to load the CSV. Expected at data/conflict_deaths_by_type.csv")
   );
 });
 
@@ -358,7 +359,7 @@ function drawStacked100(sel, worldRows){
     .call(d3.axisLeft(y).tickValues([0,.25,.5,.75,1]).tickSize(-(width-margin.left-margin.right)).tickFormat(""))
     .selectAll("line").attr("opacity",0.35);
 
-  // barre
+  // bars
   svg.append("g").selectAll("g").data(series).join("g")
     .attr("fill", d => TYPE_COLORS(d.key))
     .selectAll("rect").data(d => d).join("rect")
@@ -377,7 +378,7 @@ function drawStacked100(sel, worldRows){
       })
       .on("mouseleave",()=> tip.style("opacity",0));
 
-  // assi
+  // axes
   svg.append("g").attr("class","axis")
     .attr("transform",`translate(0,${height-margin.bottom})`)
     .call(d3.axisBottom(x).tickValues(years.filter(y => y%2===0)));
@@ -386,7 +387,7 @@ function drawStacked100(sel, worldRows){
     .attr("transform",`translate(${margin.left},0)`)
     .call(d3.axisLeft(y).tickValues([0,.25,.5,.75,1]).tickFormat(d3.format(".0%")));
 
-  // legenda (pill) sotto il grafico
+  // legend
   const legend = d3.select(sel).append("div").attr("class","legend");
   TYPE_ORDER.forEach(k=>{
     const item = legend.append("span").attr("class","pill");
