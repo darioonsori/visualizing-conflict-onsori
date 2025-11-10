@@ -125,6 +125,9 @@ d3.csv(DATA_PATH, d3.autoType).then(raw => {
 
   // 6) Histogram (distributions section)
   drawHistogram("#histogram", countries, SNAPSHOT_YEAR);
+  
+  // 7) Violin plot
+  drawViolin("#violin", countries, SNAPSHOT_YEAR);
 
 }).catch(err => {
   console.error(err);
@@ -546,5 +549,91 @@ function drawHistogram(sel, data, year){
   // caption note (optional inline)
   d3.select(sel).append("div").attr("class", "caption")
     .text(`Histogram for ${year}. Values above the 99th percentile are clipped to improve readability.`);
+}
+
+/* 7) Violin plot — distribution by conflict type */
+function drawViolin(sel, data, year) {
+  // 1) Filter data for selected year and exclude aggregates
+  const rows = data.filter(d => d.year === year && isISO3(d.code) && d.total > 0);
+  if (!rows.length) { alertIn(sel, `No data available for ${year}.`); return; }
+
+  // 2) Prepare data by type
+  const tidy = TYPE_ORDER.map(k => ({
+    key: k,
+    values: rows.map(r => r[k]).filter(v => v > 0)
+  }));
+
+  // 3) Layout
+  const width = 900, height = 400;
+  const margin = { top: 10, right: 30, bottom: 60, left: 100 };
+
+  const svg = d3.select(sel).html("")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  // 4) Scales
+  const x = d3.scaleLinear()
+    .domain([0, d3.max(tidy.flatMap(d => d.values)) || 1])
+    .range([margin.left, width - margin.right]);
+
+  const y = d3.scaleBand()
+    .domain(TYPE_ORDER)
+    .range([margin.top, height - margin.bottom])
+    .padding(0.25);
+
+  // 5) Kernel density estimation
+  const kde = (kernel, thresholds, data) =>
+    thresholds.map(t => [t, d3.mean(data, d => kernel(t - d))]);
+
+  const epanechnikov = k => v => Math.abs(v /= k) <= 1 ? 0.75 * (1 - v * v) / k : 0;
+
+  const thresholds = x.ticks(50);
+
+  // 6) Draw violins
+  tidy.forEach(d => {
+    if (!d.values.length) return;
+    const density = kde(epanechnikov(0.4 * d3.deviation(d.values)), thresholds, d.values);
+    const maxY = d3.max(density, d => d[1]) || 1;
+    const scaleY = d3.scaleLinear().range([0, y.bandwidth() / 2]).domain([0, maxY]);
+
+    const area = d3.area()
+      .x(a => x(a[0]))
+      .y0(y(d.key) + y.bandwidth() / 2)
+      .y1(a => y(d.key) + y.bandwidth() / 2 - scaleY(a[1]))
+      .curve(d3.curveCatmullRom);
+
+    svg.append("path")
+      .datum(density)
+      .attr("fill", TYPE_COLORS(d.key))
+      .attr("opacity", 0.6)
+      .attr("stroke", "#333")
+      .attr("stroke-width", 0.8)
+      .attr("d", area);
+  });
+
+  // 7) Axes
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(0,${height - margin.bottom})`)
+    .call(d3.axisBottom(x).ticks(6, "~s"));
+
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(d3.axisLeft(y));
+
+  // 8) Labels
+  svg.append("text")
+    .attr("x", (width + margin.left) / 2)
+    .attr("y", height - 10)
+    .attr("text-anchor", "middle")
+    .attr("class", "axis-label")
+    .text("Deaths per country");
+
+  // 9) Caption note
+  d3.select(sel).append("div")
+    .attr("class", "caption")
+    .text(`Each “violin” shows the distribution of country-level deaths per conflict type in ${year}. Wider sections mean more countries fall in that range.`);
 }
 
