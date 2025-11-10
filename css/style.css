@@ -1,4 +1,4 @@
-:root{
+:root {
   --bg: #f5f6f8;
   --paper: #ffffff;
   --ink: #111827;
@@ -9,9 +9,9 @@
   --shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.05);
 }
 
-*{ box-sizing: border-box; }
-html, body{ height: 100%; }
-body{
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
@@ -19,26 +19,26 @@ body{
 }
 
 /* Page container */
-.container{
+.container {
   max-width: 980px;
   margin: 32px auto 64px;
   padding: 0 16px;
 }
 
 /* Titles */
-h1{
+h1 {
   margin: 0 0 4px;
   font-size: 28px;
   line-height: 1.25;
 }
-.subtitle{
+.subtitle {
   margin: 0 0 24px;
   color: var(--muted);
 }
 
 /* Sections and cards */
-section{ margin: 24px 0; }
-.card{
+section { margin: 24px 0; }
+.card {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 10px;
@@ -46,41 +46,42 @@ section{ margin: 24px 0; }
   padding: 14px 16px 10px;
   margin: 14px 0;
 }
-.card h3{
+.card h3 {
   margin: 4px 0 12px;
   font-size: 16px;
 }
 
 /* Small helper text under section titles */
-.note{
+.note {
   color: var(--muted);
   font-size: 13px;
   margin: 8px 4px 2px;
 }
 
 /* Chart host blocks (SVG gets appended inside) */
-#bar-top10, #grouped, #heatmap, #stack100, #waffle{
+#bar-top10, #grouped, #heatmap, #stack100, #waffle,
+#histogram, #violin, #boxplot {
   width: 100%;
-  overflow: hidden; /* avoid stray scroll if tooltips push SVG bounds */
+  overflow: hidden;
 }
 
 /* Axes, grid, labels inside SVGs */
-.axis text{ fill: #374151; font-size: 12px; }
-.axis path, .axis line{ stroke: #d1d5db; }
-.grid line{ stroke: #e5e7eb; }
+.axis text { fill: #374151; font-size: 12px; }
+.axis path, .axis line { stroke: #d1d5db; }
+.grid line { stroke: #e5e7eb; }
 
 /* Value labels near bars */
-text.value{ font-weight: 600; }
+text.value { font-weight: 600; }
 
 /* Legend (rendered by JS below grouped / stacked) */
-.legend{
+.legend {
   display: flex;
   gap: 8px 12px;
   flex-wrap: wrap;
   align-items: center;
   margin: 8px 2px 0;
 }
-.pill{
+.pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -91,7 +92,7 @@ text.value{ font-weight: 600; }
   padding: 4px 10px;
   font-size: 12px;
 }
-.pill .swatch{
+.pill .swatch {
   width: 11px;
   height: 11px;
   border-radius: 3px;
@@ -100,7 +101,7 @@ text.value{ font-weight: 600; }
 }
 
 /* Tooltip used across charts */
-.tooltip{
+.tooltip {
   position: absolute;
   pointer-events: none;
   background: #111827;
@@ -114,14 +115,14 @@ text.value{ font-weight: 600; }
 }
 
 /* Chart captions */
-.caption{
+.caption {
   color: var(--muted);
   font-size: 12px;
   margin: 8px 2px 0;
 }
 
 /* In-chart alert (rendered from JS on error/empty) */
-.alert{
+.alert {
   background: #fff7ed;
   border: 1px solid #fdba74;
   color: #9a3412;
@@ -132,22 +133,65 @@ text.value{ font-weight: 600; }
 }
 
 /* Footer */
-.site-footer{
+.site-footer {
   margin-top: 32px;
   color: var(--muted);
   text-align: left;
   font-size: 13px;
 }
-.site-footer .small{ font-size: 12px; }
-.toplink{
+.site-footer .small { font-size: 12px; }
+.toplink {
   color: #2563eb;
   text-decoration: none;
 }
-.toplink:hover{ text-decoration: underline; }
+.toplink:hover { text-decoration: underline; }
+
+/* ===============================
+   Section 2 — Distribution Charts
+   =============================== */
+
+#histogram svg,
+#violin svg,
+#boxplot svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.violin-shape {
+  fill-opacity: 0.7;
+  stroke-width: 0.8px;
+}
+
+.box rect.box {
+  fill-opacity: 0.25;
+  stroke-width: 1.2px;
+}
+
+.box line.median {
+  stroke-width: 2px;
+}
+
+.axis path,
+.axis line {
+  shape-rendering: crispEdges;
+}
+
+.axis text {
+  font-size: 12px;
+  fill: #374151;
+}
+
+.axis-label {
+  fill: #555;
+  font-size: 12px;
+  text-anchor: middle;
+  dominant-baseline: hanging;
+}
 
 /* Responsive tweaks */
-@media (max-width: 640px){
-  h1{ font-size: 22px; }
-  .card{ padding: 12px; }
-  .pill{ font-size: 11px; padding: 3px 8px; }
+@media (max-width: 640px) {
+  h1 { font-size: 22px; }
+  .card { padding: 12px; }
+  .pill { font-size: 11px; padding: 3px 8px; }
 }
