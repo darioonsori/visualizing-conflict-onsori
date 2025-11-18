@@ -1,20 +1,21 @@
 /*******************************************************
  * Visualizing Conflict and Human Suffering — JS bundle
- * Source: UCDP via Our World in Data (OWID)
+ * Dataset: UCDP via Our World in Data
  *
- * Charts
- *  1) Top-10 by total deaths (countries)           → #bar-top10
- *  2) By type for selected countries (grouped)     → #grouped
- *  3) World totals by type × year (heatmap)        → #heatmap
- *  4) World shares by type over time (100% stack)  → #stack100
- *  5) World composition in Y (waffle)              → #waffle
- *  6) Country totals in Y (histogram)              → #histogram
- *  7) Distribution by type in Y (violin)           → #violin
- *  8) Country distribution by type in Y (boxplot)  → #boxplot
+ * Section 1 — Comparing categories
+ *  1) Top-10 barchart (absolute)            → #bar-top10
+ *  2) Grouped barchart (selected countries) → #grouped
+ *  3) Heatmap (World totals, type × year)   → #heatmap
+ *  4) 100% stacked barchart (World shares)  → #stack100
+ *  5) Waffle chart (World composition Y)    → #waffle
  *
- * Notes
- *  – “Extrasystemic” conflicts are kept for completeness; modern years are typically zero.
- *  – Regions/aggregates are filtered out via an ISO3 guard.
+ * Section 2 — Distributions (snapshot year)
+ *  6) Histogram (country totals)            → #histogram
+ *  7) Violin plot (by conflict type)        → #violin
+ *  8) Boxplot (by conflict type)            → #boxplot
+ *
+ * Section 3 — Temporal patterns
+ *  9) Line chart (World totals over time)   → #timeseries
  *******************************************************/
 
 /* ---------- Config ---------- */
@@ -132,6 +133,9 @@ d3.csv(DATA_PATH, d3.autoType).then(raw => {
 
   // 8) Country distribution by type in Y (boxplot)
   drawBoxplot("#boxplot", countries, SNAPSHOT_YEAR);
+
+  / 9) Time series (World totals over time)
+  drawTimeSeries("#timeseries", worldOnly);
 
 }).catch(err => {
   console.error(err);
@@ -887,4 +891,116 @@ function drawBoxplot(sel, data, year) {
     .attr("y", height - margin.bottom + 58)
     .attr("text-anchor", "middle")
     .text("Deaths per country");
+}
+
+
+/* 9) Time series — World totals over time */
+function drawTimeSeries(sel, worldRows) {
+  if (!worldRows.length) {
+    alertIn(sel, "No World aggregate rows found.");
+    return;
+  }
+
+  // Keep one row per year, ordered in time
+  const rows = worldRows
+    .slice()
+    .sort((a, b) => d3.ascending(a.year, b.year));
+
+  const years = rows.map(d => d.year);
+  const totals = rows.map(d => d.total);
+
+  const width = 900, height = 360;
+  const margin = { top: 18, right: 28, bottom: 58, left: 60 };
+
+  const svg = d3.select(sel).html("")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  const x = d3.scaleLinear()
+    .domain(d3.extent(years))
+    .range([margin.left, width - margin.right]);
+
+  const y = d3.scaleLinear()
+    .domain([0, d3.max(totals) || 1]).nice()
+    .range([height - margin.bottom, margin.top]);
+
+  // Horizontal grid lines to help reading the trend
+  svg.append("g")
+    .attr("class", "grid")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(
+      d3.axisLeft(y)
+        .ticks(5)
+        .tickSize(-(width - margin.left - margin.right))
+        .tickFormat("")
+    )
+    .selectAll("line")
+    .attr("opacity", 0.3);
+
+  // Line generator
+  const line = d3.line()
+    .x(d => x(d.year))
+    .y(d => y(d.total))
+    .curve(d3.curveMonotoneX);
+
+  // Main line
+  svg.append("path")
+    .datum(rows)
+    .attr("fill", "none")
+    .attr("stroke", "#4f7df3")
+    .attr("stroke-width", 2.4)
+    .attr("d", line);
+
+  // Small circles on each year for better hover targets
+  const fmt = d3.format(",");
+  svg.append("g")
+    .selectAll("circle")
+    .data(rows)
+    .join("circle")
+      .attr("cx", d => x(d.year))
+      .attr("cy", d => y(d.total))
+      .attr("r", 3)
+      .attr("fill", "#4f7df3")
+      .attr("stroke", "#ffffff")
+      .attr("stroke-width", 1)
+      .on("mousemove", (ev, d) => {
+        tip.style("opacity", 1)
+          .html(
+            `<strong>${d.year}</strong><br/>` +
+            `${fmt(Math.round(d.total))} deaths`
+          )
+          .style("left", ev.pageX + "px")
+          .style("top", ev.pageY + "px");
+      })
+      .on("mouseleave", () => tip.style("opacity", 0));
+
+  // Axes
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(0,${height - margin.bottom})`)
+    .call(
+      d3.axisBottom(x)
+        .ticks(8)
+        .tickFormat(d3.format("d"))
+    );
+
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(${margin.left},0)`)
+    .call(d3.axisLeft(y).ticks(5).tickFormat(d3.format("~s")));
+
+  // Axis label
+  svg.append("text")
+    .attr("class", "axis-label")
+    .attr("x", (margin.left + (width - margin.right)) / 2)
+    .attr("y", height - margin.bottom + 40)
+    .text("Year");
+
+  svg.append("text")
+    .attr("class", "axis-label")
+    .attr("transform", "rotate(-90)")
+    .attr("x", -(margin.top + (height - margin.bottom)) / 2)
+    .attr("y", margin.left - 42)
+    .text("Conflict-related deaths (World total)");
 }
