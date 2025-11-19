@@ -1002,8 +1002,10 @@ function drawTimeSeries(sel, worldRows) {
 
   svg.append("text")
     .attr("class", "axis-label")
-    .attr("transform", "rotate(-90)")
-    .attr("x", -(margin.top + (height - margin.bottom)) / 2)
-    .attr("y", 20)   // distanza dal bordo sinistro del grafico
+    .attr(
+      "transform",
+      `translate(20, ${(margin.top + height - margin.bottom) / 2}) rotate(-90)`
+    )
+    .attr("text-anchor", "middle")
     .text("Conflict-related deaths (World total)");
 }
