@@ -913,7 +913,7 @@ function drawTimeSeries(sel, worldRows) {
   const totals = rows.map(d => d.total);
 
   const width = 900, height = 360;
-  const margin = { top: 18, right: 28, bottom: 58, left: 60 };
+  const margin = { top: 18, right: 28, bottom: 58, left: 80 };
 
   const svg = d3.select(sel).html("")
     .append("svg")
