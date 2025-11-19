@@ -49,7 +49,10 @@ const isISO3 = code => typeof code === "string" && /^[A-Z]{3}$/.test(code);
 
 // Make column discovery resilient to OWID header wording
 function detectColumns(headers){
-  const norm = s => s.toLowerCase().replace(/[–—−-]/g, "-").replace(/\s+/g, " ").trim();
+  const norm = s => s
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
   const H = headers.map(h => ({ raw: h, n: norm(h) }));
   const pick = (...needles) => {
     const i = H.findIndex(({n}) => needles.some(nd => n.includes(nd)));
