@@ -134,7 +134,7 @@ d3.csv(DATA_PATH, d3.autoType).then(raw => {
   // 8) Country distribution by type in Y (boxplot)
   drawBoxplot("#boxplot", countries, SNAPSHOT_YEAR);
 
-  / 9) Time series (World totals over time)
+  // 9) Time series (World totals over time)
   drawTimeSeries("#timeseries", worldOnly);
 
 }).catch(err => {
