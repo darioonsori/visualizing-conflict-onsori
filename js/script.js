@@ -909,10 +909,11 @@ function drawTimeSeries(sel, worldRows) {
     .slice()
     .sort((a, b) => d3.ascending(a.year, b.year));
 
-  const years = rows.map(d => d.year);
+  const years  = rows.map(d => d.year);
   const totals = rows.map(d => d.total);
 
-  const width = 900, height = 360;
+  const width  = 900;
+  const height = 360;
   const margin = { top: 18, right: 28, bottom: 58, left: 100 };
 
   const svg = d3.select(sel).html("")
@@ -993,18 +994,21 @@ function drawTimeSeries(sel, worldRows) {
     .attr("transform", `translate(${margin.left},0)`)
     .call(d3.axisLeft(y).ticks(5).tickFormat(d3.format("~s")));
 
-  // Axis label
+  // X-axis label
   svg.append("text")
     .attr("class", "axis-label")
     .attr("x", (margin.left + (width - margin.right)) / 2)
     .attr("y", height - margin.bottom + 40)
     .text("Year");
 
+  // Y-axis label: ancorata a margin.left
+  const centerY = (margin.top + (height - margin.bottom)) / 2;
+
   svg.append("text")
     .attr("class", "axis-label")
     .attr(
       "transform",
-      `translate(20, ${(margin.top + height - margin.bottom) / 2}) rotate(-90)`
+      `translate(${margin.left - 60}, ${centerY}) rotate(-90)`
     )
     .attr("text-anchor", "middle")
     .text("Conflict-related deaths (World total)");
