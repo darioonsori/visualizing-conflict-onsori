@@ -1037,18 +1037,18 @@ function drawTimeSeries(sel, worldRows) {
 
 /* 10) Choropleth map — total conflict-related deaths per country (snapshot year) */
 function drawChoropleth(sel, worldGeoJSON, dataRows) {
-  // Build a lookup table: { ISO_A3 -> total_deaths_2023 }
+  // Build a lookup table: { iso3 -> total_deaths_2023 }
   const valueByISO = {};
   dataRows.forEach(d => {
-    const iso = d.iso3;    
+    const iso = d.iso3;
     const val = +d.total;
     if (!isNaN(val)) valueByISO[iso] = val;
   });
 
-  // Extract all positive values to build a log scale
+  // Positive values for the log color scale
   const positiveValues = Object.values(valueByISO).filter(v => v > 0);
 
-  const width = 960;
+  const width  = 960;
   const height = 500;
   const margin = { top: 0, right: 0, bottom: 40, left: 0 };
 
@@ -1057,21 +1057,15 @@ function drawChoropleth(sel, worldGeoJSON, dataRows) {
     .attr("width", width)
     .attr("height", height);
 
-  // Projection and path generator
+  // Projection and path
   const projection = d3.geoNaturalEarth1()
     .fitSize([width, height], worldGeoJSON);
-
   const path = d3.geoPath(projection);
 
-  // Color scale (logarithmic — only positive values)
+  // Log color scale (only positive values)
   const color = d3.scaleSequentialLog()
     .domain([1, d3.max(positiveValues) || 1])
     .interpolator(d3.interpolateOrRd);
-
-  // Tooltip div
-  const tooltip = d3.select("body")
-    .append("div")
-    .attr("class", "tooltip hidden");
 
   // Draw countries
   svg.append("g")
@@ -1082,21 +1076,17 @@ function drawChoropleth(sel, worldGeoJSON, dataRows) {
       .attr("fill", d => {
         const iso = d.properties.iso_a3;
         const val = valueByISO[iso];
-
-        // Countries with missing OR zero values have no color (light grey)
-        if (val > 0) return color(val);
-        return "#e6e6e6";
+        if (val > 0) return color(val);   // positive deaths
+        return "#e6e6e6";                 // zero or missing
       })
       .attr("stroke", "#999")
       .attr("stroke-width", 0.4)
       .on("mousemove", (event, d) => {
-        const iso = d.properties.iso_a3;
+        const iso  = d.properties.iso_a3;
         const name = d.properties.name;
-        const val = valueByISO[iso];
+        const val  = valueByISO[iso];
 
-        let message = "";
-
-        // Distinguish true missing vs zero deaths
+        let message;
         if (val === undefined) {
           message = `<strong>${name}</strong><br/>No data in this dataset in 2023`;
         } else if (val === 0) {
@@ -1105,55 +1095,55 @@ function drawChoropleth(sel, worldGeoJSON, dataRows) {
           message = `<strong>${name}</strong><br/>${d3.format(",")(val)} deaths in 2023`;
         }
 
-        tooltip
+        // Use the global tooltip `tip`
+        tip.style("opacity", 1)
           .html(message)
-          .style("left", event.pageX + 12 + "px")
-          .style("top", event.pageY + 12 + "px")
-          .classed("hidden", false);
+          .style("left", (event.pageX + 12) + "px")
+          .style("top",  (event.pageY + 12) + "px");
       })
-      .on("mouseleave", () => tooltip.classed("hidden", true));
+      .on("mouseleave", () => {
+        tip.style("opacity", 0);
+      });
 
-  // Color legend (log scale)
-  const legendWidth = 240;
+  // Legend
+  const legendWidth  = 240;
   const legendHeight = 10;
 
-  const legendSvg = svg.append("g")
-    .attr("transform", `translate(${(width - legendWidth) / 2}, ${height - margin.bottom + 10})`);
+  const legendGroup = svg.append("g")
+    .attr("transform",
+      `translate(${(width - legendWidth) / 2}, ${height - margin.bottom + 10})`
+    );
 
-  // Gradient
-  const gradient = legendSvg.append("defs")
-    .append("linearGradient")
+  const defs = legendGroup.append("defs");
+  const gradient = defs.append("linearGradient")
     .attr("id", "legend-gradient");
 
-  gradient.selectAll("stop")
-    .data(d3.range(0, 1.01, 0.1))
-    .enter()
-    .append("stop")
-    .attr("offset", d => d)
-    .attr("stop-color", d => color(Math.pow(10, d3.interpolate(logMin(), logMax())(d))));
+  // Build gradient in log-space
+  const minVal = 1;
+  const maxVal = d3.max(positiveValues) || 1;
+  d3.range(0, 1.01, 0.1).forEach(t => {
+    const val = d3.scaleLog().domain([0,1]).range([minVal, maxVal])(t);
+    gradient.append("stop")
+      .attr("offset", t)
+      .attr("stop-color", color(val));
+  });
 
-  function logMin() { return Math.log10(1); }
-  function logMax() { return Math.log10(d3.max(positiveValues) || 1); }
-
-  legendSvg.append("rect")
+  legendGroup.append("rect")
     .attr("width", legendWidth)
     .attr("height", legendHeight)
     .style("fill", "url(#legend-gradient)");
 
-  // Legend axis
   const legendScale = d3.scaleLog()
-    .domain([1, d3.max(positiveValues) || 1])
+    .domain([minVal, maxVal])
     .range([0, legendWidth]);
 
-  const legendAxis = d3.axisBottom(legendScale)
-    .ticks(4, "~s");
+  const legendAxis = d3.axisBottom(legendScale).ticks(4, "~s");
 
-  legendSvg.append("g")
+  legendGroup.append("g")
     .attr("transform", `translate(0, ${legendHeight})`)
     .call(legendAxis);
 
-  // Legend label
-  legendSvg.append("text")
+  legendGroup.append("text")
     .attr("x", legendWidth / 2)
     .attr("y", -6)
     .attr("text-anchor", "middle")
