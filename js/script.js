@@ -1120,24 +1120,22 @@ function drawChoropleth(sel, worldGeoJSON, dataRows, year) {
   const legendHeight = 10;
 
   const legendGroup = svg.append("g")
-    .attr("transform",
-      `translate(${(width - legendWidth) / 2}, ${height - marginBottom + 12})`);
+    .attr(
+      "transform",
+      `translate(${(width - legendWidth) / 2}, ${height - marginBottom + 12})`
+    );
 
-  // Gradient definition
+  // Gradient definition — directly use the OrRd interpolator on t ∈ [0,1]
   const defs = svg.append("defs");
   const gradient = defs.append("linearGradient")
     .attr("id", "choropleth-gradient");
 
   const stops = 10;
-  const logMin = Math.log(1);
-  const logMax = Math.log(maxVal);
-  
   for (let i = 0; i <= stops; i++) {
-    const t = i / stops;
-    const val = Math.exp(logMin + t * (logMax - logMin));  // correct log interpolation
+    const t = i / stops; // 0 → 1
     gradient.append("stop")
       .attr("offset", `${t * 100}%`)
-      .attr("stop-color", color(val));
+      .attr("stop-color", d3.interpolateOrRd(t));
   }
 
   legendGroup.append("rect")
@@ -1145,6 +1143,7 @@ function drawChoropleth(sel, worldGeoJSON, dataRows, year) {
     .attr("height", legendHeight)
     .attr("fill", "url(#choropleth-gradient)");
 
+  // Log scale only for the tick labels
   const legendScale = d3.scaleLog()
     .domain([1, maxVal])
     .range([0, legendWidth]);
