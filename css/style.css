@@ -79,7 +79,7 @@ section { margin: 24px 0; }
 
 /* Chart host blocks (SVG gets appended inside) */
 #bar-top10, #grouped, #heatmap, #stack100, #waffle,
-#histogram, #violin, #boxplot, #timeseries {
+#histogram, #violin, #boxplot, #timeseries, #map-choropleth {
   width: 100%;
   overflow: visible;
 }
