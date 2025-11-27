@@ -28,6 +28,10 @@ const TYPE_COLORS = d3.scaleOrdinal()
   .domain(TYPE_ORDER)
   .range(["#6c8ae4","#f28e2b","#edc948","#59a14f","#e15759"]);
 
+// --- Geo config for maps ---
+const WORLD_GEOJSON_PATH = "data/world_countries.geojson"; 
+const GEO_ID_PROP        = "ISO_A3";                       // property del GeoJSON con il codice ISO3
+
 /* ---------- Shared tooltip ---------- */
 // Single floating tooltip reused by all charts
 const tip = d3.select("body").append("div")
@@ -139,6 +143,15 @@ d3.csv(DATA_PATH, d3.autoType).then(raw => {
 
   // 9) Time series (World totals over time)
   drawTimeSeries("#timeseries", worldOnly);
+
+  // 10) Maps — load world GeoJSON and draw the choropleth
+  d3.json(WORLD_GEOJSON_PATH).then(worldGeo => {
+    drawChoroplethMap("#map-choropleth", worldGeo, countries, SNAPSHOT_YEAR);
+    // Le altre mappe (symbol, contour) le aggiungeremo qui più avanti
+  }).catch(err => {
+    console.error(err);
+    alertIn("#map-choropleth", "Failed to load the world GeoJSON.");
+  });
 
 }).catch(err => {
   console.error(err);
