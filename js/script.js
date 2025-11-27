@@ -57,8 +57,8 @@ const ALL_VIZ_SELECTORS = [
   "#violin",
   "#boxplot",
   "#timeseries",
-  "#map-choropleth"
-  "#map-symbol"
+  "#map-choropleth",
+  "#map-symbol"     
 ];
 
 /* ---------- Shared tooltip ---------- */
