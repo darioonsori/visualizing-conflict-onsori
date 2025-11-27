@@ -157,12 +157,17 @@ Promise.all([
   drawTimeSeries("#timeseries", worldOnly);
 
   // 10) Choropleth map (NEW)
-  drawChoropleth("#map-choropleth", worldFeatures, countries, SNAPSHOT_YEAR);
+  try {
+    drawChoropleth("#map-choropleth", worldFC, countries, SNAPSHOT_YEAR);
+  } catch (e) {
+    console.error("Failed to render choropleth:", e);
+    alertIn("#map-choropleth", "Could not render map (GeoJSON error).");
+  }
   
 }).catch(err => {
   console.error(err);
   ["#bar-top10","#grouped","#heatmap","#stack100","#waffle",
-   "#histogram","#violin","#boxplot","#timeseries","#map-choropleth"]
+   "#histogram","#violin","#boxplot","#timeseries"]
     .forEach(sel =>
       alertIn(sel, "Failed to load data. Expected CSV and GeoJSON in /data.")
     );
@@ -1036,33 +1041,13 @@ function drawTimeSeries(sel, worldRows) {
 }
 
 /* 10) Choropleth map — total conflict-related deaths per country (snapshot year) */
-function drawChoropleth(sel, worldGeoInput, dataRows, year) {
-  // --- 0) Normalizza il GeoJSON in una FeatureCollection robusta ---
-  if (!worldGeoInput) {
-    alertIn(sel, "Could not load world boundaries (GeoJSON is missing).");
+function drawChoropleth(sel, worldFC, dataRows, year) {
+  // --- 0) Controlli sul GeoJSON ---
+  if (!worldFC || !Array.isArray(worldFC.features) || !worldFC.features.length) {
+    alertIn(sel, "World boundaries are missing or invalid.");
     return;
   }
-
-  let featureCollection;
-
-  // Caso 1: hai già una FeatureCollection
-  if (Array.isArray(worldGeoInput.features)) {
-    featureCollection = worldGeoInput;
-  }
-  // Caso 2: ti è stato passato direttamente l'array di features
-  else if (Array.isArray(worldGeoInput)) {
-    featureCollection = { type: "FeatureCollection", features: worldGeoInput };
-  }
-  // Caso 3: altro oggetto GeoJSON (fallback)
-  else {
-    featureCollection = worldGeoInput;
-  }
-
-  const features = featureCollection.features || [];
-  if (!features.length) {
-    alertIn(sel, "World boundaries are empty or invalid.");
-    return;
-  }
+  const features = worldFC.features;
 
   // --- 1) Filtra i dati per l'anno selezionato ---
   const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
@@ -1098,7 +1083,7 @@ function drawChoropleth(sel, worldGeoInput, dataRows, year) {
 
   // --- 2) Proiezione e path ---
   const projection = d3.geoNaturalEarth1()
-    .fitSize([width, height - marginBottom - 10], featureCollection);
+    .fitSize([width, height - marginBottom - 10], worldFC);
 
   const path = d3.geoPath(projection);
 
@@ -1114,14 +1099,22 @@ function drawChoropleth(sel, worldGeoInput, dataRows, year) {
     .join("path")
       .attr("d", path)
       .attr("fill", d => {
-        const iso = (d.properties.iso_a3 || d.properties.ISO_A3 || "").toUpperCase();
+        const iso = (
+          d.properties.iso_a3 ||
+          d.properties.ISO_A3 ||
+          ""
+        ).toUpperCase();
         const val = valueByISO[iso];
         return val > 0 ? color(val) : "#e5e7eb";   // grigio chiaro per 0 o missing
       })
       .attr("stroke", "#9ca3af")
       .attr("stroke-width", 0.4)
       .on("mousemove", (ev, d) => {
-        const iso  = (d.properties.iso_a3 || d.properties.ISO_A3 || "").toUpperCase();
+        const iso  = (
+          d.properties.iso_a3 ||
+          d.properties.ISO_A3 ||
+          ""
+        ).toUpperCase();
         const name = d.properties.name || d.properties.ADMIN || "Unknown country";
         const val  = valueByISO[iso];
 
@@ -1143,7 +1136,7 @@ function drawChoropleth(sel, worldGeoInput, dataRows, year) {
         tip.style("opacity", 0);
       });
 
-  // --- 5) Legenda continua su scala log (corretta, non tutta nera) ---
+  // --- 5) Legenda continua su scala log ---
   const legendWidth  = 260;
   const legendHeight = 10;
 
