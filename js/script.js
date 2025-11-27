@@ -1490,161 +1490,97 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
     .text("Total conflict-related deaths (log scale)");
 }
 
-/* 11) Proportional symbol map — country totals as circles (snapshot year)
- *
- * This map reuses the same world GeoJSON and projection as the choropleth.
- * Countries are drawn in a neutral grey and circles are placed at their
- * centroids. Circle area (radius) is proportional to total deaths in the
- * selected year.
- */
-function drawProportionalMap(sel, worldFC, dataRows, year) {
-  // 0) Validate GeoJSON
-  if (!worldFC || !Array.isArray(worldFC.features) || !worldFC.features.length) {
-    alertIn(sel, "World boundaries are missing or invalid.");
-    return;
-  }
-  const features = worldFC.features;
+function drawProportionalMap(sel, world, countriesData, year) {
 
-  // 1) Filter data for the selected year and build ISO3 → value lookup
-  const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
-  if (!rows.length) {
-    alertIn(sel, `No country data for year ${year}.`);
-    return;
-  }
+  // Filter dataset to selected year
+  const rows = countriesData.filter(d => d.year === year);
 
-  const valueByISO = {};
-  rows.forEach(d => {
-    const iso = d.code;
-    const val = +d.total;
-    if (!Number.isNaN(val) && val > 0) {
-      valueByISO[iso] = val;
-    }
-  });
+  // Build a lookup: ISO_A3 → total deaths
+  const totals = new Map(rows.map(d => [d.iso3, +d.total]));
 
-  const positiveValues = Object.values(valueByISO).filter(v => v > 0);
-  if (!positiveValues.length) {
-    alertIn(sel, `No positive country totals for ${year}.`);
-    return;
-  }
-  const maxVal = d3.max(positiveValues) || 1;
+  // Extract country centroids (only those with data > 0)
+  const pts = world.features
+    .map(f => ({
+      country: f.properties.ADMIN,
+      iso3: f.properties.ISO_A3,
+      total: totals.get(f.properties.ISO_A3) || 0,
+      centroid: d3.geoCentroid(f)
+    }))
+    // Filtering low values improves readability (semantic zooming)
+    .filter(d => d.total > 10);
 
-  const width  = 900;
-  const height = 420;
-  const marginBottom = 56;
+  const width = 900;
+  const height = 500;
 
-  const svg = d3.select(sel).html("")
+  const projection = d3.geoWinkel3()
+    .fitSize([width, height], world);
+
+  const path = d3.geoPath(projection);
+
+  const svg = d3.select(sel)
+    .html("")
     .append("svg")
     .attr("width", width)
     .attr("height", height);
 
-  // Hide tooltip when leaving the map area
-  d3.select(sel).on("mouseleave", hideTooltip);
-
-  // 2) Projection and path (same as choropleth)
-  const projection = d3.geoNaturalEarth1()
-    .fitSize([width, height - marginBottom - 10], worldFC);
-
-  const path = d3.geoPath(projection);
-
-  // 3) Basemap in neutral grey
+  // --- Background countries ---
   svg.append("g")
     .selectAll("path")
-    .data(features)
+    .data(world.features)
     .join("path")
-      .attr("d", path)
-      .attr("class", "map-base");
+    .attr("class", "symbol-country")
+    .attr("d", path);
 
-  // 4) Circle radius (sqrt so area ∝ value)
-  const radius = d3.scaleSqrt()
-    .domain([1, maxVal])
-    .range([2, 22]);  // adjust if you want larger/smaller bubbles
+  // --- Radius scale: r ∝ sqrt(value) (area encodes the variable) ---
+  const maxValue = d3.max(pts, d => d.total);
+  const rScale = d3.scaleSqrt()
+    .domain([0, maxValue])
+    .range([2, 40]); // adjustable
 
-  // Helper: robust ISO3 extraction from GeoJSON properties
-  const getISO3 = feat => {
-    const p = feat.properties || {};
-    return (p.iso_a3 || p.ISO_A3 || "").toUpperCase();
-  };
-
-  // 5) Build list of features with both geometry and data (+ centroids)
-  const symbolFeatures = features
-    .map(f => {
-      const iso = getISO3(f);
-      const val = valueByISO[iso];
-      if (!val || val <= 0) return null;
-
-      const c = path.centroid(f);
-      const cx = c[0];
-      const cy = c[1];
-      if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
-
-      return { feature: f, iso, value: val, cx, cy };
-    })
-    .filter(d => d !== null)
-    // Larger circles first → small ones drawn on top and remain visible
-    .sort((a, b) => d3.descending(a.value, b.value));
-
-  if (!symbolFeatures.length) {
-    alertIn(sel, `No countries with valid geometries and data in ${year}.`);
-    return;
-  }
-
-  const fmt = d3.format(",");
-
-  // 6) Draw circles
+  // --- Circles ---
   svg.append("g")
     .selectAll("circle")
-    .data(symbolFeatures)
+    .data(pts)
     .join("circle")
-      .attr("class", "map-symbol-circle")
-      .attr("cx", d => d.cx)
-      .attr("cy", d => d.cy)
-      .attr("r",  d => radius(d.value))
-      .on("mousemove", (ev, d) => {
-        const name =
-          d.feature.properties?.name ||
-          d.feature.properties?.ADMIN ||
-          d.iso;
+    .attr("class", "symbol-circle")
+    .attr("cx", d => projection(d.centroid)[0])
+    .attr("cy", d => projection(d.centroid)[1])
+    .attr("r", d => rScale(d.total))
+    .on("mouseover", (e, d) => {
+      tip
+        .style("opacity", 1)
+        .html(`<strong>${d.country}</strong><br>${d.total.toLocaleString()} deaths in ${year}`);
+    })
+    .on("mousemove", (e) => {
+      tip.style("left", (e.pageX + 15) + "px")
+         .style("top", (e.pageY + 15) + "px");
+    })
+    .on("mouseout", () => tip.style("opacity", 0));
 
-        const html =
-          `<strong>${name}</strong><br/>` +
-          `${fmt(d.value)} deaths in ${year}`;
-        showTooltip(ev, html);
-      })
-      .on("mouseleave", hideTooltip);
+  // --- Legend ---
+  const legendValues = [20000, 40000, 60000];
+  const legendX = width - 120;
+  const legendY = height - 180;
 
-  // 7) Simple bubble legend (bottom-right corner)
-  const legendVals = d3.ticks(1, maxVal, 3)
-    .filter((v, i, arr) => v > 0 && (i === 0 || v !== arr[i - 1]));
+  const legend = svg.append("g").attr("class", "symbol-legend")
+    .attr("transform", `translate(${legendX}, ${legendY})`);
 
-  if (legendVals.length) {
-    const legend = svg.append("g")
-      .attr("transform", `translate(${width - 140}, ${height - marginBottom + 10})`);
+  legend.append("text")
+    .text("Deaths (circle area)")
+    .attr("y", -10)
+    .style("font-weight", "600");
 
-    const lineHeight = 26;
-
-    legendVals.slice().reverse().forEach((v, i) => {
-      const r  = radius(v);
-      const cy = -i * lineHeight - r;
-
-      legend.append("circle")
-        .attr("cx", 0)
-        .attr("cy", cy)
-        .attr("r",  r)
-        .attr("class", "map-symbol-circle");
-
-      legend.append("text")
-        .attr("x", r + 8)
-        .attr("y", cy + 4)
-        .attr("font-size", 11)
-        .attr("fill", "#374151")
-        .text(fmt(Math.round(v)));
-    });
+  legendValues.forEach((v, i) => {
+    const cy = i * 55;
+    legend.append("circle")
+      .attr("cx", 0)
+      .attr("cy", cy)
+      .attr("r", rScale(v))
+      .attr("class", "symbol-circle");
 
     legend.append("text")
-      .attr("x", 0)
-      .attr("y", -legendVals.length * lineHeight - 6)
-      .attr("font-size", 12)
-      .attr("fill", "#555")
-      .text("Deaths (circle area)");
-  }
+      .attr("x", 50)
+      .attr("y", cy + 4)
+      .text(v.toLocaleString());
+  });
 }
