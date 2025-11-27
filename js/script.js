@@ -58,6 +58,7 @@ const ALL_VIZ_SELECTORS = [
   "#boxplot",
   "#timeseries",
   "#map-choropleth"
+  "#map-symbol"
 ];
 
 /* ---------- Shared tooltip ---------- */
@@ -1489,17 +1490,23 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
     .text("Total conflict-related deaths (log scale)");
 }
 
-/* 11) Proportional symbol map — country totals as circles (snapshot year)*/
+/* 11) Proportional symbol map — country totals as circles (snapshot year)
+ *
+ * This map reuses the same world GeoJSON and projection as the choropleth.
+ * Countries are drawn in a neutral grey and circles are placed at their
+ * centroids. Circle area (radius) is proportional to total deaths in the
+ * selected year.
+ */
 function drawProportionalMap(sel, worldFC, dataRows, year) {
-  // --- 0) Basic GeoJSON validation ----------------------------------------
+  // 0) Validate GeoJSON
   if (!worldFC || !Array.isArray(worldFC.features) || !worldFC.features.length) {
     alertIn(sel, "World boundaries are missing or invalid.");
     return;
   }
   const features = worldFC.features;
 
-  // --- 1) Filter data for the target year and build an ISO3 → value lookup --
-  const rows = dataRows.filter(d => d.year === year && isISO3(d.code) && d.total > 0);
+  // 1) Filter data for the selected year and build ISO3 → value lookup
+  const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
   if (!rows.length) {
     alertIn(sel, `No country data for year ${year}.`);
     return;
@@ -1514,7 +1521,11 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
     }
   });
 
-  const positiveValues = Object.values(valueByISO);
+  const positiveValues = Object.values(valueByISO).filter(v => v > 0);
+  if (!positiveValues.length) {
+    alertIn(sel, `No positive country totals for ${year}.`);
+    return;
+  }
   const maxVal = d3.max(positiveValues) || 1;
 
   const width  = 900;
@@ -1526,18 +1537,16 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
     .attr("width", width)
     .attr("height", height);
 
-  // Hide tooltip when leaving the map container
-  d3.select(sel).on("mouseleave", () => {
-    tip.style("opacity", 0);
-  });
+  // Hide tooltip when leaving the map area
+  d3.select(sel).on("mouseleave", hideTooltip);
 
-  // --- 2) Projection and path (same as choropleth) ------------------------
+  // 2) Projection and path (same as choropleth)
   const projection = d3.geoNaturalEarth1()
     .fitSize([width, height - marginBottom - 10], worldFC);
 
   const path = d3.geoPath(projection);
 
-  // --- 3) Draw neutral basemap -------------------------------------------
+  // 3) Basemap in neutral grey
   svg.append("g")
     .selectAll("path")
     .data(features)
@@ -1545,33 +1554,33 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
       .attr("d", path)
       .attr("class", "map-base");
 
-  // --- 4) Circle scale (sqrt so that area ~ value) ------------------------
+  // 4) Circle radius (sqrt so area ∝ value)
   const radius = d3.scaleSqrt()
     .domain([1, maxVal])
-    .range([2, 22]); // tweak upper bound if circles look too big/small
+    .range([2, 22]);  // adjust if you want larger/smaller bubbles
 
-  // Helper to extract a consistent ISO3 code from GeoJSON
-  const getISO3 = d => {
-    const p = d.properties || {};
+  // Helper: robust ISO3 extraction from GeoJSON properties
+  const getISO3 = feat => {
+    const p = feat.properties || {};
     return (p.iso_a3 || p.ISO_A3 || "").toUpperCase();
   };
 
-  // Prepare list of countries with both geometry and data
+  // 5) Build list of features with both geometry and data (+ centroids)
   const symbolFeatures = features
     .map(f => {
       const iso = getISO3(f);
       const val = valueByISO[iso];
       if (!val || val <= 0) return null;
 
-      const centroid = path.centroid(f);
-      const cx = centroid[0];
-      const cy = centroid[1];
+      const c = path.centroid(f);
+      const cx = c[0];
+      const cy = c[1];
       if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
 
       return { feature: f, iso, value: val, cx, cy };
     })
     .filter(d => d !== null)
-    // Sort by decreasing value so that small circles remain visible on top
+    // Larger circles first → small ones drawn on top and remain visible
     .sort((a, b) => d3.descending(a.value, b.value));
 
   if (!symbolFeatures.length) {
@@ -1579,9 +1588,9 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
     return;
   }
 
-  // --- 5) Draw circles ----------------------------------------------------
   const fmt = d3.format(",");
 
+  // 6) Draw circles
   svg.append("g")
     .selectAll("circle")
     .data(symbolFeatures)
@@ -1591,44 +1600,38 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
       .attr("cy", d => d.cy)
       .attr("r",  d => radius(d.value))
       .on("mousemove", (ev, d) => {
-        const name = d.feature.properties.name || d.feature.properties.ADMIN || d.iso;
-        tip.style("opacity", 1)
-          .html(
-            `<strong>${name}</strong><br/>` +
-            `${fmt(d.value)} deaths in ${year}`
-          )
-          .style("left", ev.pageX + "px")
-          .style("top",  ev.pageY + "px");
-      })
-      .on("mouseleave", () => {
-        tip.style("opacity", 0);
-      });
+        const name =
+          d.feature.properties?.name ||
+          d.feature.properties?.ADMIN ||
+          d.iso;
 
-  // --- 6) Simple bubble legend (bottom-right corner) ----------------------
+        const html =
+          `<strong>${name}</strong><br/>` +
+          `${fmt(d.value)} deaths in ${year}`;
+        showTooltip(ev, html);
+      })
+      .on("mouseleave", hideTooltip);
+
+  // 7) Simple bubble legend (bottom-right corner)
   const legendVals = d3.ticks(1, maxVal, 3)
     .filter((v, i, arr) => v > 0 && (i === 0 || v !== arr[i - 1]));
 
   if (legendVals.length) {
     const legend = svg.append("g")
-      .attr(
-        "transform",
-        `translate(${width - 140}, ${height - marginBottom + 10})`
-      );
+      .attr("transform", `translate(${width - 140}, ${height - marginBottom + 10})`);
 
     const lineHeight = 26;
 
     legendVals.slice().reverse().forEach((v, i) => {
-      const r = radius(v);
+      const r  = radius(v);
       const cy = -i * lineHeight - r;
 
-      // Circle
       legend.append("circle")
         .attr("cx", 0)
         .attr("cy", cy)
-        .attr("r", r)
+        .attr("r",  r)
         .attr("class", "map-symbol-circle");
 
-      // Label (aligned to the right of the largest circle)
       legend.append("text")
         .attr("x", r + 8)
         .attr("y", cy + 4)
@@ -1637,7 +1640,6 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
         .text(fmt(Math.round(v)));
     });
 
-    // Legend title
     legend.append("text")
       .attr("x", 0)
       .attr("y", -legendVals.length * lineHeight - 6)
