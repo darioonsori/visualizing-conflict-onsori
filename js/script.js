@@ -157,7 +157,7 @@ Promise.all([
   drawTimeSeries("#timeseries", worldOnly);
 
   // 10) Choropleth map (NEW)
-  drawChoropleth("#map-choropleth", worldFC, countries, SNAPSHOT_YEAR);
+  drawChoropleth("#map-choropleth", worldFeatures, countries, SNAPSHOT_YEAR);
   
 }).catch(err => {
   console.error(err);
@@ -1036,117 +1036,126 @@ function drawTimeSeries(sel, worldRows) {
 }
 
 /* 10) Choropleth map — total conflict-related deaths per country (snapshot year) */
-function drawChoropleth(sel, worldGeoJSON, dataRows) {
-  // Build a lookup table: { iso3 -> total_deaths_2023 }
+function drawChoropleth(sel, worldGeoJSON, dataRows, year) {
+  // 1) Filter one row per ISO3 country for the selected year
+  const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
+  if (!rows.length) {
+    alertIn(sel, `No country data for year ${year}.`);
+    return;
+  }
+
+  // Lookup table: ISO3 -> total deaths in that year
   const valueByISO = {};
-  dataRows.forEach(d => {
-    const iso = d.iso3;
+  rows.forEach(d => {
+    const iso = d.code;          // ISO3 from the CSV
     const val = +d.total;
     if (!isNaN(val)) valueByISO[iso] = val;
   });
 
-  // Positive values for the log color scale
   const positiveValues = Object.values(valueByISO).filter(v => v > 0);
+  const maxVal = d3.max(positiveValues) || 1;
 
-  const width  = 960;
-  const height = 500;
-  const margin = { top: 0, right: 0, bottom: 40, left: 0 };
+  const width  = 900;
+  const height = 420;
+  const marginBottom = 40;
 
   const svg = d3.select(sel).html("")
     .append("svg")
     .attr("width", width)
     .attr("height", height);
 
-  // Projection and path
+  // Hide tooltip when leaving the whole map area
+  d3.select(sel).on("mouseleave", () => {
+    tip.style("opacity", 0);
+  });
+
+  // 2) Projection and path generator
   const projection = d3.geoNaturalEarth1()
-    .fitSize([width, height], worldGeoJSON);
+    .fitSize([width, height - marginBottom - 10], worldGeoJSON);
   const path = d3.geoPath(projection);
 
-  // Log color scale (only positive values)
+  // 3) Log color scale (only positive values)
   const color = d3.scaleSequentialLog()
-    .domain([1, d3.max(positiveValues) || 1])
+    .domain([1, maxVal])
     .interpolator(d3.interpolateOrRd);
 
-  // Draw countries
+  // 4) Draw countries
   svg.append("g")
     .selectAll("path")
     .data(worldGeoJSON.features)
     .join("path")
       .attr("d", path)
       .attr("fill", d => {
-        const iso = d.properties.iso_a3;
+        const iso = d.properties.iso_a3;   // ISO3 from GeoJSON
         const val = valueByISO[iso];
-        if (val > 0) return color(val);   // positive deaths
-        return "#e6e6e6";                 // zero or missing
+        return val > 0 ? color(val) : "#e5e7eb";  // light grey for 0/undefined
       })
-      .attr("stroke", "#999")
+      .attr("stroke", "#9ca3af")
       .attr("stroke-width", 0.4)
-      .on("mousemove", (event, d) => {
+      .on("mousemove", (ev, d) => {
         const iso  = d.properties.iso_a3;
         const name = d.properties.name;
         const val  = valueByISO[iso];
+        let html;
 
-        let message;
         if (val === undefined) {
-          message = `<strong>${name}</strong><br/>No data in this dataset in 2023`;
+          html = `<strong>${name}</strong><br/>No data in this dataset in ${year}`;
         } else if (val === 0) {
-          message = `<strong>${name}</strong><br/>0 conflict-related deaths in 2023`;
+          html = `<strong>${name}</strong><br/>0 conflict-related deaths in ${year}`;
         } else {
-          message = `<strong>${name}</strong><br/>${d3.format(",")(val)} deaths in 2023`;
+          html = `<strong>${name}</strong><br/>${d3.format(",")(val)} deaths in ${year}`;
         }
 
-        // Use the global tooltip `tip`
         tip.style("opacity", 1)
-          .html(message)
-          .style("left", (event.pageX + 12) + "px")
-          .style("top",  (event.pageY + 12) + "px");
+          .html(html)
+          .style("left", ev.pageX + "px")
+          .style("top",  ev.pageY + "px");
       })
       .on("mouseleave", () => {
         tip.style("opacity", 0);
       });
 
-  // Legend
-  const legendWidth  = 240;
+  // 5) Color legend (log scale)
+  const legendWidth  = 260;
   const legendHeight = 10;
 
   const legendGroup = svg.append("g")
     .attr("transform",
-      `translate(${(width - legendWidth) / 2}, ${height - margin.bottom + 10})`
-    );
+      `translate(${(width - legendWidth) / 2}, ${height - marginBottom + 12})`);
 
-  const defs = legendGroup.append("defs");
+  // Gradient definition
+  const defs = svg.append("defs");
   const gradient = defs.append("linearGradient")
-    .attr("id", "legend-gradient");
+    .attr("id", "choropleth-gradient");
 
-  // Build gradient in log-space
-  const minVal = 1;
-  const maxVal = d3.max(positiveValues) || 1;
-  d3.range(0, 1.01, 0.1).forEach(t => {
-    const val = d3.scaleLog().domain([0,1]).range([minVal, maxVal])(t);
+  const stops = 10;
+  for (let i = 0; i <= stops; i++) {
+    const t   = i / stops;
+    const val = 1 * Math.pow(maxVal, t);
     gradient.append("stop")
-      .attr("offset", t)
+      .attr("offset", `${t * 100}%`)
       .attr("stop-color", color(val));
-  });
+  }
 
   legendGroup.append("rect")
-    .attr("width", legendWidth)
+    .attr("width",  legendWidth)
     .attr("height", legendHeight)
-    .style("fill", "url(#legend-gradient)");
+    .attr("fill", "url(#choropleth-gradient)");
 
   const legendScale = d3.scaleLog()
-    .domain([minVal, maxVal])
+    .domain([1, maxVal])
     .range([0, legendWidth]);
 
-  const legendAxis = d3.axisBottom(legendScale).ticks(4, "~s");
-
   legendGroup.append("g")
+    .attr("class", "axis")
     .attr("transform", `translate(0, ${legendHeight})`)
-    .call(legendAxis);
+    .call(d3.axisBottom(legendScale).ticks(4, "~s"));
 
   legendGroup.append("text")
     .attr("x", legendWidth / 2)
     .attr("y", -6)
     .attr("text-anchor", "middle")
-    .attr("font-size", "12px")
+    .attr("font-size", 12)
+    .attr("fill", "#555")
     .text("Total conflict-related deaths (log scale)");
 }
