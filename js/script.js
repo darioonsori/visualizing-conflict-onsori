@@ -20,6 +20,7 @@
 
 /* ---------- Config ---------- */
 const DATA_PATH = "data/conflict_deaths_by_type.csv"; // path in the repo
+const WORLD_GEO_PATH = "data/world_countries.geojson";
 const SNAPSHOT_YEAR = 2023;
 const FOCUS_COUNTRIES = ["Ukraine","Palestine","Sudan","Mexico","Burkina Faso"];
 
@@ -92,7 +93,11 @@ function mapRow(d, C){
 }
 
 /* ---------- Data load + dispatch ---------- */
-d3.csv(DATA_PATH, d3.autoType).then(raw => {
+Promise.all([
+  d3.csv(DATA_PATH, d3.autoType),
+  d3.json(WORLD_GEO_PATH)
+]).then(([raw, worldGeo]) => {
+
   if (!raw?.length) throw new Error("CSV is empty.");
 
   const headers = Object.keys(raw[0]);
@@ -101,15 +106,20 @@ d3.csv(DATA_PATH, d3.autoType).then(raw => {
   // Minimal set needed to render the page
   const required = [C.entity, C.code, C.year, C.intrastate, C.nonstate, C.onesided];
   if (required.some(x => !x)) {
-    ["#bar-top10","#grouped","#heatmap","#stack100","#waffle"].forEach(sel =>
-      alertIn(sel, "Could not detect required columns in the CSV.")
-    );
+    ["#bar-top10","#grouped","#heatmap","#stack100","#waffle",
+     "#histogram","#violin","#boxplot","#timeseries","#map-choropleth"]
+      .forEach(sel =>
+        alertIn(sel, "Could not detect required columns in the CSV.")
+      );
     return;
   }
 
   const rows      = raw.map(d => mapRow(d, C));
   const countries = rows.filter(r => isISO3(r.code) && r.entity !== "World");
   const worldOnly = rows.filter(r => r.entity === "World");
+
+  // GeoJSON features (world map)
+  const worldFeatures = (worldGeo && worldGeo.features) ? worldGeo.features : worldGeo;
 
   // Year labels in the HTML
   d3.select("#year-top").text(SNAPSHOT_YEAR);
@@ -144,20 +154,16 @@ d3.csv(DATA_PATH, d3.autoType).then(raw => {
   // 9) Time series (World totals over time)
   drawTimeSeries("#timeseries", worldOnly);
 
-  // 10) Maps — load world GeoJSON and draw the choropleth
-  d3.json(WORLD_GEOJSON_PATH).then(worldGeo => {
-    drawChoroplethMap("#map-choropleth", worldGeo, countries, SNAPSHOT_YEAR);
-    // Le altre mappe (symbol, contour) le aggiungeremo qui più avanti
-  }).catch(err => {
-    console.error(err);
-    alertIn("#map-choropleth", "Failed to load the world GeoJSON.");
-  });
+  // 10) Choropleth map (NEW)
+  drawChoropleth("#map-choropleth", worldFeatures, countries, SNAPSHOT_YEAR);
 
 }).catch(err => {
   console.error(err);
-  ["#bar-top10","#grouped","#heatmap","#stack100","#waffle"].forEach(sel =>
-    alertIn(sel, "Failed to load the CSV. Expected at data/conflict_deaths_by_type.csv")
-  );
+  ["#bar-top10","#grouped","#heatmap","#stack100","#waffle",
+   "#histogram","#violin","#boxplot","#timeseries","#map-choropleth"]
+    .forEach(sel =>
+      alertIn(sel, "Failed to load data. Expected CSV and GeoJSON in /data.")
+    );
 });
 
 /* ===================== CHARTS ===================== */
@@ -1025,4 +1031,119 @@ function drawTimeSeries(sel, worldRows) {
     )
     .attr("text-anchor", "middle")
     .text("Conflict-related deaths (World total)");
+}
+
+/* 10) Choropleth map — total conflict-related deaths per country (snapshot year) */
+function drawChoropleth(sel, features, countryRows, year) {
+  if (!features || !features.length) {
+    alertIn(sel, "World GeoJSON not available.");
+    return;
+  }
+
+  // 1) Mappa codice ISO3 → totale morti nel year
+  const dataYear = countryRows.filter(d => d.year === year && d.total > 0);
+  if (!dataYear.length) {
+    alertIn(sel, `No country data for year ${year}.`);
+    return;
+  }
+
+  const valueByCode = new Map();
+  dataYear.forEach(d => valueByCode.set(d.code, d.total));
+
+  const values = Array.from(valueByCode.values());
+  const maxVal = d3.max(values) || 1;
+
+  // Scala colore (log per gestire la coda pesante)
+  const color = d3.scaleSequential(d3.interpolateOrRd)
+    .domain([0, Math.log10(maxVal + 1)]);
+
+  const width  = 900;
+  const height = 420;
+
+  const svg = d3.select(sel).html("")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  // 2) Proiezione e path
+  const projection = d3.geoNaturalEarth1()
+    .fitSize([width, height - 40], { type: "FeatureCollection", features });
+
+  const path = d3.geoPath().projection(projection);
+
+  const fmt = d3.format(",");
+
+  // 3) Disegno paesi
+  svg.append("g")
+    .selectAll("path")
+    .data(features)
+    .join("path")
+      .attr("d", path)
+      .attr("stroke", "#ffffff")
+      .attr("stroke-width", 0.5)
+      .attr("fill", d => {
+        const code = d.properties.iso_a3;
+        const v    = valueByCode.get(code) || 0;
+        if (!v) return "#e5e7eb"; // grigio chiaro per "no data"
+        const t = Math.log10(v + 1);
+        return color(t);
+      })
+      .on("mousemove", (ev, d) => {
+        const name = d.properties.name || d.properties.admin || "";
+        const code = d.properties.iso_a3;
+        const v    = valueByCode.get(code) || 0;
+        const label = v
+          ? `${fmt(Math.round(v))} deaths`
+          : "No data in this dataset";
+
+        tip.style("opacity", 1)
+          .html(`<strong>${name}</strong><br/>${label} in ${year}`)
+          .style("left", ev.pageX + "px")
+          .style("top",  ev.pageY + "px");
+      })
+      .on("mouseleave", () => tip.style("opacity", 0));
+
+  // 4) Semplice legenda continua (log)
+  const legendWidth  = 260;
+  const legendHeight = 10;
+  const legendX = (width - legendWidth) / 2;
+  const legendY = height - 28;
+
+  const defs = svg.append("defs");
+  const grad = defs.append("linearGradient")
+    .attr("id", "choropleth-grad")
+    .attr("x1", "0%").attr("x2", "100%")
+    .attr("y1", "0%").attr("y2", "0%");
+
+  const steps = 10;
+  d3.range(steps + 1).forEach(i => {
+    const t = i / steps;
+    grad.append("stop")
+      .attr("offset", (t * 100) + "%")
+      .attr("stop-color", color(t * Math.log10(maxVal + 1)));
+  });
+
+  svg.append("rect")
+    .attr("x", legendX)
+    .attr("y", legendY)
+    .attr("width", legendWidth)
+    .attr("height", legendHeight)
+    .attr("fill", "url(#choropleth-grad)");
+
+  // Scala per ticks della legenda (in valore assoluto, non log)
+  const legendScale = d3.scaleLog()
+    .domain([1, maxVal])
+    .range([legendX, legendX + legendWidth]);
+
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(0,${legendY + legendHeight})`)
+    .call(d3.axisBottom(legendScale).ticks(3, "~s"));
+
+  svg.append("text")
+    .attr("class", "axis-label")
+    .attr("x", legendX + legendWidth / 2)
+    .attr("y", legendY - 6)
+    .attr("text-anchor", "middle")
+    .text("Total conflict-related deaths (log scale)");
 }
