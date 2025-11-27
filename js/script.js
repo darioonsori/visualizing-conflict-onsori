@@ -89,6 +89,7 @@ function mapRow(d, C){
     "One-sided":   +d[C.onesided]      || 0,
   };
   r.total = TYPE_ORDER.reduce((acc, k) => acc + (r[k] || 0), 0);
+  r.iso3  = r.code;  
   return r;
 }
 
@@ -120,6 +121,7 @@ Promise.all([
 
   // GeoJSON features (world map)
   const worldFeatures = (worldGeo && worldGeo.features) ? worldGeo.features : worldGeo;
+  const worldFC = { type: "FeatureCollection", features: worldFeatures };
 
   // Year labels in the HTML
   d3.select("#year-top").text(SNAPSHOT_YEAR);
@@ -155,8 +157,8 @@ Promise.all([
   drawTimeSeries("#timeseries", worldOnly);
 
   // 10) Choropleth map (NEW)
-  drawChoropleth("#map-choropleth", worldFeatures, countries, SNAPSHOT_YEAR);
-
+  drawChoropleth("#map-choropleth", worldFC, countries, SNAPSHOT_YEAR);
+  
 }).catch(err => {
   console.error(err);
   ["#bar-top10","#grouped","#heatmap","#stack100","#waffle",
@@ -1038,7 +1040,7 @@ function drawChoropleth(sel, worldGeoJSON, dataRows) {
   // Build a lookup table: { ISO_A3 -> total_deaths_2023 }
   const valueByISO = {};
   dataRows.forEach(d => {
-    const iso = d.iso3;
+    const iso = d.iso3;    
     const val = +d.total;
     if (!isNaN(val)) valueByISO[iso] = val;
   });
