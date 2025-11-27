@@ -157,7 +157,7 @@ Promise.all([
   drawTimeSeries("#timeseries", worldOnly);
 
   // 10) Choropleth map (NEW)
-  drawChoropleth("#map-choropleth", worldFC, countries, SNAPSHOT_YEAR);
+  drawChoropleth("#map-choropleth", worldFeatures, countries, SNAPSHOT_YEAR);
   
 }).catch(err => {
   console.error(err);
@@ -1036,24 +1036,51 @@ function drawTimeSeries(sel, worldRows) {
 }
 
 /* 10) Choropleth map — total conflict-related deaths per country (snapshot year) */
-function drawChoropleth(sel, worldGeoJSON, dataRows, year) {
-  // 1) Filter one row per ISO3 country for the selected year
+function drawChoropleth(sel, worldGeoInput, dataRows, year) {
+  // --- 0) Normalizza il GeoJSON in una FeatureCollection robusta ---
+  if (!worldGeoInput) {
+    alertIn(sel, "Could not load world boundaries (GeoJSON is missing).");
+    return;
+  }
+
+  let featureCollection;
+
+  // Caso 1: hai già una FeatureCollection
+  if (Array.isArray(worldGeoInput.features)) {
+    featureCollection = worldGeoInput;
+  }
+  // Caso 2: ti è stato passato direttamente l'array di features
+  else if (Array.isArray(worldGeoInput)) {
+    featureCollection = { type: "FeatureCollection", features: worldGeoInput };
+  }
+  // Caso 3: altro oggetto GeoJSON (fallback)
+  else {
+    featureCollection = worldGeoInput;
+  }
+
+  const features = featureCollection.features || [];
+  if (!features.length) {
+    alertIn(sel, "World boundaries are empty or invalid.");
+    return;
+  }
+
+  // --- 1) Filtra i dati per l'anno selezionato ---
   const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
   if (!rows.length) {
     alertIn(sel, `No country data for year ${year}.`);
     return;
   }
 
-  // Lookup table: ISO3 -> total deaths in that year
+  // Lookup ISO3 -> totale morti
   const valueByISO = {};
   rows.forEach(d => {
-    const iso = d.code;          // ISO3 from the CSV
+    const iso = d.code;
     const val = +d.total;
     if (!isNaN(val)) valueByISO[iso] = val;
   });
 
   const positiveValues = Object.values(valueByISO).filter(v => v > 0);
-  const maxVal = d3.max(positiveValues) || 1;
+  const maxVal = d3.max(positiveValues) || 1; // almeno 1 per la scala log
 
   const width  = 900;
   const height = 420;
@@ -1064,40 +1091,41 @@ function drawChoropleth(sel, worldGeoJSON, dataRows, year) {
     .attr("width", width)
     .attr("height", height);
 
-  // Hide tooltip when leaving the whole map area
+  // Nascondi tooltip quando si esce dall'area della mappa
   d3.select(sel).on("mouseleave", () => {
     tip.style("opacity", 0);
   });
 
-  // 2) Projection and path generator
+  // --- 2) Proiezione e path ---
   const projection = d3.geoNaturalEarth1()
-    .fitSize([width, height - marginBottom - 10], worldGeoJSON);
+    .fitSize([width, height - marginBottom - 10], featureCollection);
+
   const path = d3.geoPath(projection);
 
-  // 3) Log color scale (only positive values)
+  // --- 3) Scala di colore logaritmica (solo valori > 0) ---
   const color = d3.scaleSequentialLog()
     .domain([1, maxVal])
     .interpolator(d3.interpolateOrRd);
 
-  // 4) Draw countries
+  // --- 4) Disegna i paesi ---
   svg.append("g")
     .selectAll("path")
-    .data(worldGeoJSON.features)
+    .data(features)
     .join("path")
       .attr("d", path)
       .attr("fill", d => {
-        const iso = d.properties.iso_a3;   // ISO3 from GeoJSON
+        const iso = (d.properties.iso_a3 || d.properties.ISO_A3 || "").toUpperCase();
         const val = valueByISO[iso];
-        return val > 0 ? color(val) : "#e5e7eb";  // light grey for 0/undefined
+        return val > 0 ? color(val) : "#e5e7eb";   // grigio chiaro per 0 o missing
       })
       .attr("stroke", "#9ca3af")
       .attr("stroke-width", 0.4)
       .on("mousemove", (ev, d) => {
-        const iso  = d.properties.iso_a3;
-        const name = d.properties.name;
+        const iso  = (d.properties.iso_a3 || d.properties.ISO_A3 || "").toUpperCase();
+        const name = d.properties.name || d.properties.ADMIN || "Unknown country";
         const val  = valueByISO[iso];
-        let html;
 
+        let html;
         if (val === undefined) {
           html = `<strong>${name}</strong><br/>No data in this dataset in ${year}`;
         } else if (val === 0) {
@@ -1115,35 +1143,39 @@ function drawChoropleth(sel, worldGeoJSON, dataRows, year) {
         tip.style("opacity", 0);
       });
 
-  // 5) Color legend (log scale)
+  // --- 5) Legenda continua su scala log (corretta, non tutta nera) ---
   const legendWidth  = 260;
   const legendHeight = 10;
 
   const legendGroup = svg.append("g")
-    .attr(
-      "transform",
+    .attr("transform",
       `translate(${(width - legendWidth) / 2}, ${height - marginBottom + 12})`
     );
 
-  // Gradient definition — directly use the OrRd interpolator on t ∈ [0,1]
+  // Definizione del gradiente
   const defs = svg.append("defs");
   const gradient = defs.append("linearGradient")
     .attr("id", "choropleth-gradient");
 
   const stops = 10;
+  const logMin = Math.log(1);
+  const logMax = Math.log(maxVal);
+
   for (let i = 0; i <= stops; i++) {
-    const t = i / stops; // 0 → 1
+    const t   = i / stops;
+    const val = Math.exp(logMin + t * (logMax - logMin)); // interpolazione nel dominio log
     gradient.append("stop")
       .attr("offset", `${t * 100}%`)
-      .attr("stop-color", d3.interpolateOrRd(t));
+      .attr("stop-color", color(val));
   }
 
+  // Rettangolo della legenda
   legendGroup.append("rect")
     .attr("width",  legendWidth)
     .attr("height", legendHeight)
     .attr("fill", "url(#choropleth-gradient)");
 
-  // Log scale only for the tick labels
+  // Scala logaritmica per i tick della legenda
   const legendScale = d3.scaleLog()
     .domain([1, maxVal])
     .range([0, legendWidth]);
@@ -1153,6 +1185,7 @@ function drawChoropleth(sel, worldGeoJSON, dataRows, year) {
     .attr("transform", `translate(0, ${legendHeight})`)
     .call(d3.axisBottom(legendScale).ticks(4, "~s"));
 
+  // Etichetta della legenda
   legendGroup.append("text")
     .attr("x", legendWidth / 2)
     .attr("y", -6)
