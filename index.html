@@ -162,7 +162,77 @@
       </article>
     </section>
 
+    <!-- ========================================= -->
+    <!-- Section 4 — Displaying maps -->
+    <!-- ========================================= -->
+    <section id="maps" class="section">
+      <div class="section-inner">
     
+        <header class="section-header">
+          <h2>Spatial patterns</h2>
+          <p>
+            This section explores how conflict-related deaths are distributed across space.
+            All maps use the same UCDP dataset, focusing on country-level data for the
+            snapshot year 2023.
+          </p>
+        </header>
+    
+        <!-- Map 1: Choropleth -->
+        <article class="card">
+          <div class="card-body">
+            <h3>Choropleth — conflict-related deaths per country (2023)</h3>
+            <p>
+              Each country is coloured according to its total number of conflict-related
+              deaths recorded in 2023. Darker shades indicate higher values; countries
+              with no data are shown in light grey.
+            </p>
+    
+            <div id="map-choropleth" class="viz map-viz"></div>
+    
+            <p class="chart-caption">
+              World choropleth map based on UCDP country-level totals (combatants and
+              civilians) for 2023.
+            </p>
+          </div>
+        </article>
+    
+        <!-- Map 2: Proportional symbol (placeholder, sarà riempita dopo) -->
+        <article class="card">
+          <div class="card-body">
+            <h3>Proportional symbol map — deaths represented as circles (2023)</h3>
+            <p>
+              This map will use circles placed on each country to represent the same
+              totals as in the choropleth, with the radius of each circle proportional to
+              the number of deaths.
+            </p>
+    
+            <div id="map-symbol" class="viz map-viz"></div>
+    
+            <p class="chart-caption">
+              Placeholder: proportional symbol map using 2023 country-level totals.
+            </p>
+          </div>
+        </article>
+    
+        <!-- Map 3: Contour / isopleth (placeholder) -->
+        <article class="card">
+          <div class="card-body">
+            <h3>Isopleth map — smoothed intensity surface</h3>
+            <p>
+              The third map will approximate a continuous conflict intensity surface using
+              contour lines (isopleths) derived from the country-level data.
+            </p>
+    
+            <div id="map-contour" class="viz map-viz"></div>
+    
+            <p class="chart-caption">
+              Placeholder: contour map representing a smoothed conflict intensity field.
+            </p>
+          </div>
+        </article>
+    
+      </div>
+    </section>
 
     <!-- Footer -->
     <footer class="site-footer">
