@@ -157,7 +157,7 @@ Promise.all([
   drawTimeSeries("#timeseries", worldOnly);
 
   // 10) Choropleth map (NEW)
-  drawChoropleth("#map-choropleth", worldFeatures, countries, SNAPSHOT_YEAR);
+  drawChoropleth("#map-choropleth", worldFC, countries, SNAPSHOT_YEAR);
   
 }).catch(err => {
   console.error(err);
