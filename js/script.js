@@ -1129,9 +1129,12 @@ function drawChoropleth(sel, worldGeoJSON, dataRows, year) {
     .attr("id", "choropleth-gradient");
 
   const stops = 10;
+  const logMin = Math.log(1);
+  const logMax = Math.log(maxVal);
+  
   for (let i = 0; i <= stops; i++) {
-    const t   = i / stops;
-    const val = 1 * Math.pow(maxVal, t);
+    const t = i / stops;
+    const val = Math.exp(logMin + t * (logMax - logMin));  // correct log interpolation
     gradient.append("stop")
       .attr("offset", `${t * 100}%`)
       .attr("stop-color", color(val));
