@@ -199,25 +199,32 @@ text.value { font-weight: 600; }
   .axis text { font-size: 11px; }
 }
 
-/* Maps: keep SVG responsive inside cards */
 .map-viz svg {
-  width: 100%;
-  height: auto;
-  display: block;
+  font-family: var(--font-sans);
 }
 
-/* Slightly dimmed basemap for symbol map, circles sit on top */
-.map-base {
-  fill: #e5e7eb;
-  stroke: #d1d5db;
-  stroke-width: 0.4;
+.symbol-country {
+  fill: #e6e6e6;
+  stroke: #bdbdbd;
+  stroke-width: 0.5px;
 }
 
-/* Circles in proportional symbol map */
-.map-symbol-circle {
-  fill: rgba(220, 38, 38, 0.72);  /* red with some transparency */
-  stroke: #7f1d1d;
-  stroke-width: 0.7;
+.symbol-circle {
+  fill: #d9534f;
+  fill-opacity: 0.7;
+  stroke: white;
+  stroke-width: 1px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.symbol-circle:hover {
+  fill-opacity: 1;
+}
+
+.symbol-legend text {
+  font-size: 12px;
+  fill: #444;
 }
 
 /* Print helpers */
