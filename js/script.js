@@ -1377,7 +1377,10 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
     alertIn(sel, `No positive country totals for ${year}.`);
     return;
   }
-  const maxVal = d3.max(positiveValues) || 1;
+
+  const sortedVals = positiveValues.slice().sort(d3.ascending);
+  const p99 = d3.quantileSorted(sortedVals, 0.99) || d3.max(sortedVals);
+  const domainMax = Math.max(1, p99);
 
   const width  = 900;
   const height = 420;
@@ -1399,8 +1402,8 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
 
   // 3) Colour scale (sequential)
   const color = d3.scaleSequential(d3.interpolateOrRd)
-    .domain([0, maxVal]); // 0 mapped to very light, maxVal to darkest
-
+    .domain([0, domainMax]); 
+  
   // Helper: robust ISO3 extraction from GeoJSON properties
   const getISO3 = feat => {
     const p = feat.properties || {};
@@ -1420,7 +1423,7 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
       .attr("fill", d => {
         const iso = getISO3(d);
         const v   = valueByISO[iso];
-        return v && v > 0 ? color(v) : "#e5e7eb"; // light grey for “no data”
+        return v && v > 0 ? color(Math.min(v, domainMax)) : "#e5e7eb"; // light grey for “no data”
       })
       .on("mousemove", (ev, d) => {
         const iso = getISO3(d);
@@ -1461,7 +1464,7 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
 
   gradient.append("stop")
     .attr("offset", "100%")
-    .attr("stop-color", color(maxVal));
+    .attr("stop-color", color(domainMax));
 
   // Gradient bar
   svg.append("rect")
@@ -1473,7 +1476,7 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
 
   // Legend axis (linear scale)
   const legendScale = d3.scaleLinear()
-    .domain([0, maxVal])
+    .domain([0, domainMax])
     .range([legendX, legendX + legendWidth]);
 
   svg.append("g")
