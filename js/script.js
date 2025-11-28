@@ -1756,22 +1756,20 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     (points);
 
   const valuesExtent = d3.extent(contours, d => d.value);
-  const minD = valuesExtent[0] ?? 0;
-  const maxD = valuesExtent[1] ?? 1;
+  let minD = valuesExtent[0] ?? 0;
+  let maxD = valuesExtent[1] ?? 1;
 
-  // scala colori resta sui valori "reali"
+  // Evita range nullo
+  if (maxD - minD < 1e-6) {
+    maxD = minD + 1e-6;
+  }
+
   const color = d3.scaleSequential(d3.interpolateOrRd)
     .domain([minD, maxD]);
 
-  // scala normalizzata 0–1 per legenda e tooltip
-  const norm = d3.scaleLinear()
-    .domain([minD, maxD])
-    .range([0, 1]);
-
   const contourPath = d3.geoPath(); // projection=null → screen coordinates
 
-  // disegno solo il gruppo delle isoplete
-  const contoursG = svg.append("g")
+  svg.append("g")
     .attr("class", "contours")
     .selectAll("path")
     .data(contours)
@@ -1779,20 +1777,20 @@ function drawContourMap(sel, worldFC, dataRows, year) {
       .attr("d", contourPath)
       .attr("fill", d => color(d.value))
       .attr("stroke", "none")
-      .attr("opacity", 0.85);
+      .attr("opacity", 0.78);
 
-  // Tooltip SOLO sulle isoplete, con percentuale del massimo
-  contoursG
+  // On hover show RELATIVE intensity (0–100% of max)
+  svg.selectAll("path")
     .on("mousemove", (ev, d) => {
-      const perc = norm(d.value) * 100;
+      const rel = (d.value - minD) / (maxD - minD);  // 0–1
       const html =
         `<strong>Relative conflict intensity</strong><br/>` +
-        `Isopleth level: ${perc.toFixed(0)}% of max (smoothed)`;
+        `Isopleth level: ${(rel * 100).toFixed(0)}% of max (smoothed)`;
       showTooltip(ev, html);
     })
     .on("mouseleave", hideTooltip);
 
-  // 5) Simple legend in the bottom-right corner
+  // 5) Simple legend in the bottom-right corner (also 0–100%)
   const legendWidth  = 200;
   const legendHeight = 10;
   const legendX = width - legendWidth - 24;
@@ -1817,9 +1815,8 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     .attr("height", legendHeight)
     .attr("fill", "url(#contour-gradient)");
 
-  // legenda normalizzata 0–1 → percentuali
   const legendScale = d3.scaleLinear()
-    .domain([0, 1])
+    .domain([0, 1])                  // 0–100% della massima intensità
     .range([legendX, legendX + legendWidth]);
 
   svg.append("g")
@@ -1828,7 +1825,7 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     .call(
       d3.axisBottom(legendScale)
         .ticks(3)
-        .tickFormat(d3.format(".0%"))
+        .tickFormat(d => `${Math.round(d * 100)}%`)
     );
 
   svg.append("text")
@@ -1837,6 +1834,5 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     .attr("text-anchor", "middle")
     .attr("font-size", 12)
     .attr("fill", "#555")
-    .text("Smoothed conflict intensity (relative)");
-  }
-  
+    .text("Smoothed conflict intensity (relative to max)");
+}
