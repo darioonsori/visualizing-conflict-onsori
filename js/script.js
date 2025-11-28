@@ -1458,9 +1458,12 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
       })
       .on("mouseleave", hideTooltip);
 
+    
   // 7) Simple bubble legend (bottom-right corner)
-  const legendVals = d3.ticks(1, maxVal, 3)
-    .filter((v, i, arr) => v > 0 && (i === 0 || v !== arr[i - 1]));
+  // niente d3.ticks globale → costruiamo i valori “a mano”
+  let legendVals = [maxVal / 3, (2 * maxVal) / 3, maxVal]
+    .map(v => Math.round(v))
+    .filter((v, i, arr) => v > 0 && arr.indexOf(v) === i); // valori unici e > 0
 
   if (legendVals.length) {
     const legend = svg.append("g")
@@ -1482,7 +1485,7 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
       legend.append("text")
         .attr("x", r + 8)
         .attr("y", cy + 4)
-        .text(fmt(Math.round(v)));
+        .text(fmt(v));
     });
 
     legend.append("text")
