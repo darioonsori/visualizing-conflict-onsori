@@ -1336,6 +1336,160 @@ function drawTimeSeries(sel, worldRows) {
     .text("Conflict-related deaths (World total)");
 }
 
+/* 10) Choropleth map — total conflict-related deaths per country (snapshot year) */
+function drawChoropleth(sel, worldFC, dataRows, year) {
+  if (!worldFC || !Array.isArray(worldFC.features) || !worldFC.features.length) {
+    alertIn(sel, "World boundaries are missing or invalid.");
+    return;
+  }
+
+  const features = worldFC.features;
+
+  const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
+  if (!rows.length) {
+    alertIn(sel, No country data for year ${year}.);
+    return;
+  }
+
+  const valueByISO = {};
+  rows.forEach(d => {
+    const iso = d.code;
+    const val = +d.total;
+    if (!Number.isNaN(val)) {
+      valueByISO[iso] = val;
+    }
+  });
+
+  const positiveValues = Object
+    .values(valueByISO)
+    .filter(v => v > 0);
+
+  let maxVal = d3.max(positiveValues) || 1;
+  if (maxVal < 1) {
+    maxVal = 1;
+  }
+
+  const width  = 900;
+  const height = 420;
+  const marginBottom = 40;
+
+  const svg = d3.select(sel).html("")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  // Ensure the tooltip is hidden when leaving the map container.
+  d3.select(sel).on("mouseleave", hideTooltip);
+
+  const projection = d3.geoNaturalEarth1()
+    .fitSize([width, height - marginBottom - 10], worldFC);
+
+  const path = d3.geoPath(projection);
+
+  const color = d3.scaleSequentialLog()
+    .domain([1, maxVal])
+    .interpolator(d3.interpolateOrRd);
+
+  svg.append("g")
+    .selectAll("path")
+    .data(features)
+    .join("path")
+    .attr("d", path)
+    .attr("fill", d => {
+      const iso = (
+        d.properties.iso_a3 ||
+        d.properties.ISO_A3 ||
+        ""
+      ).toUpperCase();
+
+      const val = valueByISO[iso];
+      return val > 0 ? color(val) : "#e5e7eb";
+    })
+    .attr("stroke", "#9ca3af")
+    .attr("stroke-width", 0.4)
+    .on("mousemove", (ev, d) => {
+      const iso = (
+        d.properties.iso_a3 ||
+        d.properties.ISO_A3 ||
+        ""
+      ).toUpperCase();
+
+      const name =
+        d.properties.name ||
+        d.properties.ADMIN ||
+        "Unknown country";
+
+      const val = valueByISO[iso];
+
+      let html;
+      if (val === undefined) {
+        html =
+          <strong>${name}</strong><br/> +
+          No data in this dataset in ${year};
+      } else if (val === 0) {
+        html =
+          <strong>${name}</strong><br/> +
+          0 conflict-related deaths in ${year};
+      } else {
+        html =
+          <strong>${name}</strong><br/> +
+          ${d3.format(",")(val)} deaths in ${year};
+      }
+
+      showTooltip(ev, html);
+    })
+    .on("mouseleave", hideTooltip);
+
+  // Continuous legend on a logarithmic scale.
+  const legendWidth  = 260;
+  const legendHeight = 10;
+
+  const legendGroup = svg.append("g")
+    .attr(
+      "transform",
+      translate(${(width - legendWidth) / 2}, ${height - marginBottom + 12})
+    );
+
+  const defs = svg.append("defs");
+  const gradient = defs.append("linearGradient")
+    .attr("id", "choropleth-gradient");
+
+  const stops = 10;
+  const logMin = Math.log(1);
+  const logMax = Math.log(maxVal);
+
+  for (let i = 0; i <= stops; i += 1) {
+    const t   = i / stops;
+    const val = Math.exp(logMin + t * (logMax - logMin));
+
+    gradient.append("stop")
+      .attr("offset", ${t * 100}%)
+      .attr("stop-color", color(val));
+  }
+
+  legendGroup.append("rect")
+    .attr("width", legendWidth)
+    .attr("height", legendHeight)
+    .attr("fill", "url(#choropleth-gradient)");
+
+  const legendScale = d3.scaleLog()
+    .domain([1, maxVal])
+    .range([0, legendWidth]);
+
+  legendGroup.append("g")
+    .attr("class", "axis")
+    .attr("transform", translate(0, ${legendHeight}))
+    .call(d3.axisBottom(legendScale).ticks(4, "~s"));
+
+  legendGroup.append("text")
+    .attr("x", legendWidth / 2)
+    .attr("y", -6)
+    .attr("text-anchor", "middle")
+    .attr("font-size", 12)
+    .attr("fill", "#555")
+    .text("Total conflict-related deaths (log scale)");
+}
+
 /* 11) Proportional symbol map — country totals as circles (snapshot year)
  *
  * This map reuses the same world GeoJSON and projection as the choropleth.
