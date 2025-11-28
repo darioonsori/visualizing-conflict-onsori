@@ -1444,8 +1444,8 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
   const legendWidth  = 220;
   const legendHeight = 10;
   const legendX = width - legendWidth - 24;
-  const legendY = height - marginBottom + 10;
-
+  const legendY = height - marginBottom - 26;
+  
   const defs = svg.append("defs");
   const gradient = defs.append("linearGradient")
     .attr("id", "choropleth-gradient");
@@ -1481,7 +1481,7 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
 
   svg.append("text")
     .attr("x", legendX + legendWidth / 2)
-    .attr("y", legendY - 6)
+    .attr("y", legendY - 8)
     .attr("text-anchor", "middle")
     .attr("font-size", 12)
     .attr("fill", "#555")
