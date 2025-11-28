@@ -528,8 +528,10 @@ function drawWorldHeatmap(sel, worldRows) {
   // Gradient legend + label.
   const legendW = 220;
   const legendH = 10;
-  const legendX = width - legendW - 18;
-  const legendY = margin.top - 18;
+
+  // Posiziona la leggenda sotto l'asse X, in basso a destra
+  const legendX = width - legendW - 24;
+  const legendY = height - margin.bottom + 18; // sotto l'asse
 
   const defs = svg.append("defs");
   const grad = defs.append("linearGradient").attr("id", "hm-grad");
@@ -542,6 +544,7 @@ function drawWorldHeatmap(sel, worldRows) {
     .attr("offset", "100%")
     .attr("stop-color", color(max));
 
+  // Barra gradiente
   svg.append("rect")
     .attr("x", legendX)
     .attr("y", legendY)
@@ -549,6 +552,7 @@ function drawWorldHeatmap(sel, worldRows) {
     .attr("height", legendH)
     .attr("fill", "url(#hm-grad)");
 
+  // Scala log per i tick della leggenda
   const s = d3.scaleLog()
     .domain([1, max])
     .range([legendX, legendX + legendW]);
@@ -558,14 +562,15 @@ function drawWorldHeatmap(sel, worldRows) {
     .attr("transform", `translate(0,${legendY + legendH})`)
     .call(d3.axisBottom(s).ticks(3, "~s"));
 
+  // Etichetta della leggenda
   svg.append("text")
     .attr("x", legendX + legendW / 2)
-    .attr("y", legendY - 6)
+    .attr("y", legendY + legendH + 24)  // sotto la barra
     .attr("text-anchor", "middle")
     .attr("fill", "#555")
     .attr("font-size", 12)
     .text("Number of deaths (log scale)");
-}
+  
 
 /* 4) 100% stacked barchart — World shares by type over time */
 function drawStacked100(sel, worldRows) {
