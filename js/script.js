@@ -18,7 +18,9 @@
  *  9) Line chart (World totals over time)   -> #timeseries
  *
  * Section 4 — Spatial patterns
- * 10) Choropleth map (country totals, Y)    -> #map-choropleth
+ * 10) Choropleth map (country totals, snapshot year)              -> #map-choropleth
+ * 11) Proportional symbol map (country totals as circles, snapshot year) -> #map-symbol
+ * 12) Contour / isopleth map (smoothed intensity surface, snapshot year) -> #map-contour
  *******************************************************/
 
 /* ---------- Global configuration ---------- */
@@ -1652,11 +1654,7 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
   }
 }
 
-/* 12) Contour / isopleth map — smoothed conflict intensity surface (snapshot year)
- *
- * This map builds a smooth “intensity surface” from country centroids using
- * d3.contourDensity. Isolines approximate areas with similar intensity.
- */
+/* 12) Contour / isopleth map — smoothed conflict intensity surface (snapshot year)*/
 function drawContourMap(sel, worldFC, dataRows, year) {
   // 0) Basic sanity check for the world GeoJSON
   if (!worldFC || !Array.isArray(worldFC.features) || !worldFC.features.length) {
