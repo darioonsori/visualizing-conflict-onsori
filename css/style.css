@@ -232,6 +232,12 @@ text.value { font-weight: 600; }
   mix-blend-mode: multiply;
 }
 
+.chart-caption {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 8px 2px 0;
+}
+
 /* Print helpers */
 @media print {
   .tooltip { display: none !important; }
