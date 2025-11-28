@@ -228,8 +228,14 @@ text.value { font-weight: 600; }
   fill: #444;
 }
 
+.contours path {
+  mix-blend-mode: multiply;
+}
+
 /* Print helpers */
 @media print {
   .tooltip { display: none !important; }
   .callout { break-inside: avoid; }
 }
+
+
