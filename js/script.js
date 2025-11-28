@@ -1338,21 +1338,20 @@ function drawTimeSeries(sel, worldRows) {
 
 /* 10) Choropleth map — conflict-related deaths per country (snapshot year) */
 function drawChoropleth(sel, worldFC, dataRows, year) {
-  // 0) Controllo GeoJSON
+  // 0) Validate GeoJSON input
   if (!worldFC || !Array.isArray(worldFC.features) || !worldFC.features.length) {
     alertIn(sel, "World boundaries are missing or invalid.");
     return;
   }
   const features = worldFC.features;
 
-  // 1) Dati per l’anno scelto
+  // 1) Filter data for the selected year and build an ISO3 → value lookup
   const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
   if (!rows.length) {
     alertIn(sel, `No country data for year ${year}.`);
     return;
   }
 
-  // Lookup ISO3 → valore totale
   const valueByISO = {};
   rows.forEach(d => {
     const iso = d.code;
@@ -1366,32 +1365,32 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
     return;
   }
 
-  const maxVal  = d3.max(positiveValues) || 1;
-  const logMax  = Math.log10(maxVal + 1);
+  const maxVal = d3.max(positiveValues) || 1;
+  const logMax = Math.log10(maxVal + 1);
 
-  // Scala colore: usiamo il log nei valori, ma una normale sequential
+  // Sequential colour scale using log-transformed values
   const color = d3.scaleSequential(d3.interpolateOrRd)
-    .domain([0, logMax]);   // 0 → valori bassi, logMax → valori più alti
+    .domain([0, logMax]);
 
   const width        = 900;
   const height       = 360;
-  const legendHeight = 44;  // spazio per la legenda in alto
+  const legendHeight = 44; // vertical space reserved for the legend
 
   const svg = d3.select(sel).html("")
     .append("svg")
     .attr("width", width)
     .attr("height", height);
 
-  // Nascondi tooltip uscendo dall’area della mappa
+  // Hide tooltip when leaving the entire map container
   d3.select(sel).on("mouseleave", hideTooltip);
 
-  // 2) Proiezione (coerente con la mappa a cerchi)
+  // 2) Projection and path generator
   const projection = d3.geoNaturalEarth1()
     .fitSize([width, height - legendHeight], worldFC);
 
   const path = d3.geoPath(projection);
 
-  // Helper ISO3 dal GeoJSON
+  // Helper: robust ISO3 extraction from GeoJSON properties
   const getISO3 = feat => {
     const p = feat.properties || {};
     return (p.iso_a3 || p.ISO_A3 || "").toUpperCase();
@@ -1399,7 +1398,7 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
 
   const fmt = d3.format(",");
 
-  // 3) Disegno paesi
+  // 3) Draw countries as coloured polygons
   svg.append("g")
     .selectAll("path")
     .data(features)
@@ -1415,30 +1414,31 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
           return color(Math.log10(v + 1));
         }
 
-        // Paesi nel dataset ma con 0 decessi → grigio chiaro
+        // Countries present in the dataset but with zero deaths
         if (Object.prototype.hasOwnProperty.call(valueByISO, iso)) {
           return "#e5e7eb";
         }
 
-        // Paesi senza dati in questo dataset → ancora più chiaro
+        // Countries not present in the dataset
         return "#f3f4f6";
       })
       .on("mousemove", (ev, d) => {
-        const iso = getISO3(d);
-        const v   = valueByISO[iso];
-        const hasRecord = Object.prototype.hasOwnProperty.call(valueByISO, iso);
+        const iso      = getISO3(d);
+        const v        = valueByISO[iso];
+        const hasEntry = Object.prototype.hasOwnProperty.call(valueByISO, iso);
 
         const name =
           d.properties?.name ||
           d.properties?.ADMIN ||
-          iso || "Unknown";
+          iso ||
+          "Unknown";
 
         let html;
         if (v > 0) {
           html =
             `<strong>${name}</strong><br/>` +
             `${fmt(v)} conflict-related deaths in ${year}`;
-        } else if (hasRecord) {
+        } else if (hasEntry) {
           html =
             `<strong>${name}</strong><br/>` +
             `0 conflict-related deaths recorded in the dataset for ${year}`;
@@ -1452,31 +1452,31 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
       })
       .on("mouseleave", hideTooltip);
 
-  // 4) Legenda (barra + scala logaritmica)
+  // 4) Colour legend (logarithmic scale)
   const legendWidth  = 260;
   const legendInnerH = 10;
   const legendX      = (width - legendWidth) / 2;
   const legendY      = 10;
 
-  const defs  = svg.append("defs");
-  const grad  = defs.append("linearGradient")
+  const defs = svg.append("defs");
+  const grad = defs.append("linearGradient")
     .attr("id", "choropleth-grad")
     .attr("x1", "0%").attr("x2", "100%")
     .attr("y1", "0%").attr("y2", "0%");
 
-  // campioniamo lungo il range logaritmico
+  // Sample the colour scale along the log range [1, maxVal]
   const stops = 10;
   for (let i = 0; i <= stops; i += 1) {
     const t   = i / stops;
-    const val = 1 + t * (maxVal - 1);               // da 1 a maxVal
-    const col = color(Math.log10(val + 1));         // stesso mapping usato sopra
+    const val = 1 + t * (maxVal - 1);
+    const col = color(Math.log10(val + 1));
 
     grad.append("stop")
       .attr("offset", `${t * 100}%`)
       .attr("stop-color", col);
   }
 
-  // rettangolo con gradiente
+  // Gradient bar
   svg.append("rect")
     .attr("x", legendX)
     .attr("y", legendY)
@@ -1484,7 +1484,7 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
     .attr("height", legendInnerH)
     .attr("fill", "url(#choropleth-grad)");
 
-  // scala log per i tick numerici
+  // Logarithmic scale for tick labels
   const legendScale = d3.scaleLog()
     .domain([1, maxVal])
     .range([legendX, legendX + legendWidth]);
@@ -1501,25 +1501,18 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
     .attr("fill", "#555")
     .attr("font-size", 12)
     .text("Total conflict-related deaths (log scale)");
-
 }
 
-/* 11) Proportional symbol map — country totals as circles (snapshot year)
- *
- * This map reuses the same world GeoJSON and projection as the choropleth.
- * Countries are drawn in a neutral grey and circles are placed at their
- * centroids. Circle area (radius) is proportional to total deaths in the
- * selected year.
- */
+/* 11) Proportional symbol map — country totals as circles (snapshot year) */
 function drawProportionalMap(sel, worldFC, dataRows, year) {
-  // 0) Validate GeoJSON
+  // 0) Validate GeoJSON input
   if (!worldFC || !Array.isArray(worldFC.features) || !worldFC.features.length) {
     alertIn(sel, "World boundaries are missing or invalid.");
     return;
   }
   const features = worldFC.features;
 
-  // 1) Filter data for the selected year and build ISO3 → value lookup
+  // 1) Filter data for the selected year and build an ISO3 → value lookup
   const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
   if (!rows.length) {
     alertIn(sel, `No country data for year ${year}.`);
@@ -1542,8 +1535,8 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
   }
   const maxVal = d3.max(positiveValues) || 1;
 
-  const width  = 900;
-  const height = 420;
+  const width        = 900;
+  const height       = 420;
   const marginBottom = 56;
 
   const svg = d3.select(sel).html("")
@@ -1551,16 +1544,16 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
     .attr("width", width)
     .attr("height", height);
 
-  // Hide tooltip when leaving the map area
+  // Hide tooltip when leaving the entire map container
   d3.select(sel).on("mouseleave", hideTooltip);
 
-  // 2) Projection and path (same as choropleth)
+  // 2) Projection and path (aligned with the choropleth)
   const projection = d3.geoNaturalEarth1()
     .fitSize([width, height - marginBottom - 10], worldFC);
 
   const path = d3.geoPath(projection);
 
-  // 3) Basemap in neutral grey
+  // 3) Neutral background map
   svg.append("g")
     .selectAll("path")
     .data(features)
@@ -1568,10 +1561,10 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
       .attr("d", path)
       .attr("class", "symbol-country");
 
-  // 4) Circle radius (sqrt so area ∝ value)
+  // 4) Circle radius (sqrt scale so area ∝ value)
   const radius = d3.scaleSqrt()
     .domain([1, maxVal])
-    .range([2, 22]);  // adjust if you want larger/smaller bubbles
+    .range([2, 22]);
 
   // Helper: robust ISO3 extraction from GeoJSON properties
   const getISO3 = feat => {
@@ -1579,14 +1572,14 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
     return (p.iso_a3 || p.ISO_A3 || "").toUpperCase();
   };
 
-  // 5) Build list of features with both geometry and data (+ centroids)
+  // 5) Build list of countries with both geometry and data (+ centroids)
   const symbolFeatures = features
     .map(f => {
       const iso = getISO3(f);
       const val = valueByISO[iso];
       if (!val || val <= 0) return null;
 
-      const c = path.centroid(f);
+      const c  = path.centroid(f);
       const cx = c[0];
       const cy = c[1];
       if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
@@ -1594,7 +1587,7 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
       return { feature: f, iso, value: val, cx, cy };
     })
     .filter(d => d !== null)
-    // Larger circles first → small ones drawn on top and remain visible
+    // Larger circles first → smaller circles remain visible on top
     .sort((a, b) => d3.descending(a.value, b.value));
 
   if (!symbolFeatures.length) {
@@ -1604,7 +1597,7 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
 
   const fmt = d3.format(",");
 
-  // 6) Draw circles
+  // 6) Draw proportional circles
   svg.append("g")
     .selectAll("circle")
     .data(symbolFeatures)
@@ -1626,12 +1619,11 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
       })
       .on("mouseleave", hideTooltip);
 
-    
   // 7) Simple bubble legend (bottom-right corner)
-  // niente d3.ticks globale → costruiamo i valori “a mano”
+  // We construct representative legend values manually instead of using d3.ticks.
   let legendVals = [maxVal / 3, (2 * maxVal) / 3, maxVal]
     .map(v => Math.round(v))
-    .filter((v, i, arr) => v > 0 && arr.indexOf(v) === i); // valori unici e > 0
+    .filter((v, i, arr) => v > 0 && arr.indexOf(v) === i); // keep positive, unique values
 
   if (legendVals.length) {
     const legend = svg.append("g")
