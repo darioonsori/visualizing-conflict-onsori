@@ -1658,14 +1658,14 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
  * d3.contourDensity. Isolines approximate areas with similar intensity.
  */
 function drawContourMap(sel, worldFC, dataRows, year) {
-  // 0) Validate GeoJSON input
+  // 0) Basic sanity check for the world GeoJSON
   if (!worldFC || !Array.isArray(worldFC.features) || !worldFC.features.length) {
     alertIn(sel, "World boundaries are missing or invalid.");
     return;
   }
   const features = worldFC.features;
 
-  // 1) Filter data for the selected year and build ISO3 -> total lookup
+  // 1) Filter the input table for the selected year and build ISO3 -> total lookup
   const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
   if (!rows.length) {
     alertIn(sel, `No country data for year ${year}.`);
@@ -1676,6 +1676,7 @@ function drawContourMap(sel, worldFC, dataRows, year) {
   rows.forEach(d => {
     const iso = d.code;
     const val = +d.total;
+    // We only care about strictly positive totals
     if (!Number.isNaN(val) && val > 0) {
       valueByISO[iso] = val;
     }
@@ -1696,16 +1697,16 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     .attr("width", width)
     .attr("height", height);
 
-  // Hide tooltip when leaving the container
+  // Make sure the tooltip disappears when leaving the whole container
   d3.select(sel).on("mouseleave", hideTooltip);
 
-  // 2) Projection + path (same as other maps)
+  // 2) Map projection and path generator, kept consistent with the other maps
   const projection = d3.geoNaturalEarth1()
     .fitSize([width, height - marginBottom - 10], worldFC);
 
   const geoPath = d3.geoPath(projection);
 
-  // Light basemap
+  // Light gray basemap for geographic context
   svg.append("g")
     .selectAll("path")
     .data(features)
@@ -1715,13 +1716,14 @@ function drawContourMap(sel, worldFC, dataRows, year) {
       .attr("stroke", "#d1d5db")
       .attr("stroke-width", 0.4);
 
-  // Helper: robust ISO3 extraction
+  // Helper: robust ISO3 extraction from different possible property names
   const getISO3 = feat => {
     const p = feat.properties || {};
     return (p.iso_a3 || p.ISO_A3 || "").toUpperCase();
   };
 
-  // 3) Build points at country centroids, weighted by deaths (log-compressed)
+  // 3) Build one point per country centroid, weighted by conflict deaths
+  //    We log-transform the totals to avoid a few large countries dominating everything.
   const points = [];
   features.forEach(f => {
     const iso = getISO3(f);
@@ -1736,7 +1738,7 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     points.push({
       x: cx,
       y: cy,
-      weight: Math.log10(val + 1)  // compress very large differences
+      weight: Math.log10(val + 1)   // smooth out very large differences
     });
   });
 
@@ -1745,13 +1747,13 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     return;
   }
 
-  // 4) Estimate a smooth density surface and extract contours (isopleths)
+  // 4) Estimate a smooth density surface and extract contour bands (isopleths)
   const contours = d3.contourDensity()
     .x(d => d.x)
     .y(d => d.y)
     .weight(d => d.weight)
     .size([width, height - marginBottom - 10])
-    .bandwidth(40)   // smoothing; increase = smoother surface
+    .bandwidth(40)   // higher = smoother intensity field
     .thresholds(10)  // number of contour levels
     (points);
 
@@ -1759,7 +1761,7 @@ function drawContourMap(sel, worldFC, dataRows, year) {
   let minD = valuesExtent[0] ?? 0;
   let maxD = valuesExtent[1] ?? 1;
 
-  // Evita range nullo
+  // Guard against a degenerate case where all density values collapse to the same number
   if (maxD - minD < 1e-6) {
     maxD = minD + 1e-6;
   }
@@ -1767,30 +1769,50 @@ function drawContourMap(sel, worldFC, dataRows, year) {
   const color = d3.scaleSequential(d3.interpolateOrRd)
     .domain([minD, maxD]);
 
-  const contourPath = d3.geoPath(); // projection=null -> screen coordinates
+  // We use a plain screen-space path generator for the contour polygons
+  const contourPath = d3.geoPath();
 
-  svg.append("g")
-    .attr("class", "contours")
+  // 4b) Draw the filled contour bands
+  const contourGroup = svg.append("g")
+    .attr("class", "contours");
+
+  contourGroup
     .selectAll("path")
     .data(contours)
     .join("path")
       .attr("d", contourPath)
       .attr("fill", d => color(d.value))
-      .attr("stroke", "none")
-      .attr("opacity", 0.78);
+      // Thin white stroke to visually separate the bands
+      .attr("stroke", "#ffffff")
+      .attr("stroke-width", 0.5)
+      // Opacity increases with intensity: far areas are light, the core is strong
+      .attr("opacity", d => {
+        let rel = (d.value - minD) / (maxD - minD);
+        if (!Number.isFinite(rel)) rel = 0;
+        rel = Math.max(0, Math.min(1, rel));   // clamp to [0, 1]
+        return 0.25 + 0.55 * rel;             // 0.25 (lowest) → 0.80 (highest)
+      });
 
-  // On hover show RELATIVE intensity (0–100% of max)
-  svg.selectAll("path")
+  // 4c) Tooltip: show a clean percentage of the maximum intensity.
+  //     If the value is not meaningful (NaN / out of range), we simply hide the tooltip.
+  contourGroup.selectAll("path")
     .on("mousemove", (ev, d) => {
-      const rel = (d.value - minD) / (maxD - minD);  // 0–1
+      let rel = (d.value - minD) / (maxD - minD);
+      if (!Number.isFinite(rel)) {
+        hideTooltip();
+        return;
+      }
+      rel = Math.max(0, Math.min(1, rel));
+      const percent = (rel * 100).toFixed(0);
+
       const html =
         `<strong>Relative conflict intensity</strong><br/>` +
-        `Isopleth level: ${(rel * 100).toFixed(0)}% of max (smoothed)`;
+        `Isopleth level: ${percent}% of max (smoothed)`;
       showTooltip(ev, html);
     })
     .on("mouseleave", hideTooltip);
 
-  // 5) Simple legend in the bottom-right corner (also 0–100%)
+  // 5) Simple horizontal legend in the bottom-right corner, expressed in 0–100%
   const legendWidth  = 200;
   const legendHeight = 10;
   const legendX = width - legendWidth - 24;
@@ -1816,7 +1838,7 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     .attr("fill", "url(#contour-gradient)");
 
   const legendScale = d3.scaleLinear()
-    .domain([0, 1])                  // 0–100% della massima intensità
+    .domain([0, 1])  // 0–100% of the maximum intensity
     .range([legendX, legendX + legendWidth]);
 
   svg.append("g")
