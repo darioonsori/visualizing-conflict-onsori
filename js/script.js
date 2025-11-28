@@ -1828,4 +1828,6 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     .attr("font-size", 12)
     .attr("fill", "#555")
     .text("Smoothed conflict intensity (isopleths)");
+  }
 }
+  
