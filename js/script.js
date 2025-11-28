@@ -58,7 +58,8 @@ const ALL_VIZ_SELECTORS = [
   "#boxplot",
   "#timeseries",
   "#map-choropleth",
-  "#map-symbol"
+  "#map-symbol",
+  "#map-contour"
 ];
 
 /* ---------- Shared tooltip ---------- */
@@ -270,6 +271,13 @@ Promise.all([
   } catch (e) {
     console.error("Failed to render proportional symbol map:", e);
     alertIn("#map-symbol", "Could not render proportional symbol map (GeoJSON error).");
+  }
+
+  try {
+    drawContourMap("#map-contour", worldFC, countries, SNAPSHOT_YEAR);
+  } catch (e) {
+    console.error("Failed to render contour map:", e);
+    alertIn("#map-contour", "Could not render contour map (GeoJSON error).");
   }
   
 }).catch(err => {
@@ -1341,13 +1349,7 @@ function drawTimeSeries(sel, worldRows) {
     .text("Conflict-related deaths (World total)");
 }
 
-/* 10) Choropleth map — conflict-related deaths per country (snapshot year)
- *
- * This map shows country-level totals as a colour-coded choropleth.
- * Darker shades correspond to higher numbers of conflict-related deaths
- * in the selected snapshot year. Countries with no UCDP country-level data
- * are displayed in a light grey neutral colour.
- */
+/* 10) Choropleth map — conflict-related deaths per country (snapshot year) */
 function drawChoropleth(sel, worldFC, dataRows, year) {
   // 0) Validate GeoJSON input
   if (!worldFC || !Array.isArray(worldFC.features) || !worldFC.features.length) {
@@ -1496,13 +1498,7 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
     .text("Conflict-related deaths (country total)");
 }
 
-/* 11) Proportional symbol map — country totals as circles (snapshot year)
- *
- * This map reuses the same world GeoJSON and projection as the choropleth.
- * Countries are drawn using a neutral grey outline, and proportional circles
- * are placed at their centroids. Circle area is proportional to the total
- * number of conflict-related deaths recorded in the selected year.
- */
+/* 11) Proportional symbol map — country totals as circles (snapshot year)*/
 function drawProportionalMap(sel, worldFC, dataRows, year) {
   // 0) Validate GeoJSON input
   if (!worldFC || !Array.isArray(worldFC.features) || !worldFC.features.length) {
@@ -1653,4 +1649,183 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
       .attr("fill", "#555")
       .text("Deaths (circle area)");
   }
+}
+
+/* 12) Contour / isopleth map — smoothed conflict intensity surface (snapshot year)
+ *
+ * This map builds a smooth “intensity surface” from country centroids using
+ * d3.contourDensity. Isolines approximate areas with similar intensity.
+ */
+function drawContourMap(sel, worldFC, dataRows, year) {
+  // 0) Validate GeoJSON input
+  if (!worldFC || !Array.isArray(worldFC.features) || !worldFC.features.length) {
+    alertIn(sel, "World boundaries are missing or invalid.");
+    return;
+  }
+  const features = worldFC.features;
+
+  // 1) Filter data for the selected year and build ISO3 → total lookup
+  const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
+  if (!rows.length) {
+    alertIn(sel, `No country data for year ${year}.`);
+    return;
+  }
+
+  const valueByISO = {};
+  rows.forEach(d => {
+    const iso = d.code;
+    const val = +d.total;
+    if (!Number.isNaN(val) && val > 0) {
+      valueByISO[iso] = val;
+    }
+  });
+
+  const positiveValues = Object.values(valueByISO).filter(v => v > 0);
+  if (!positiveValues.length) {
+    alertIn(sel, `No positive country totals for ${year}.`);
+    return;
+  }
+
+  const width  = 900;
+  const height = 420;
+  const marginBottom = 56;
+
+  const svg = d3.select(sel).html("")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  // Hide tooltip when leaving the container
+  d3.select(sel).on("mouseleave", hideTooltip);
+
+  // 2) Projection + path (same as other maps)
+  const projection = d3.geoNaturalEarth1()
+    .fitSize([width, height - marginBottom - 10], worldFC);
+
+  const geoPath = d3.geoPath(projection);
+
+  // Light basemap
+  svg.append("g")
+    .selectAll("path")
+    .data(features)
+    .join("path")
+      .attr("d", geoPath)
+      .attr("fill", "#f3f4f6")
+      .attr("stroke", "#d1d5db")
+      .attr("stroke-width", 0.4);
+
+  // Helper: robust ISO3 extraction
+  const getISO3 = feat => {
+    const p = feat.properties || {};
+    return (p.iso_a3 || p.ISO_A3 || "").toUpperCase();
+  };
+
+  // 3) Build points at country centroids, weighted by deaths (log-compressed)
+  const points = [];
+  features.forEach(f => {
+    const iso = getISO3(f);
+    const val = valueByISO[iso];
+    if (!val || val <= 0) return;
+
+    const c = geoPath.centroid(f);
+    const cx = c[0];
+    const cy = c[1];
+    if (!Number.isFinite(cx) || !Number.isFinite(cy)) return;
+
+    points.push({
+      x: cx,
+      y: cy,
+      weight: Math.log10(val + 1)  // compress very large differences
+    });
+  });
+
+  if (!points.length) {
+    alertIn(sel, `No countries with valid geometries and data in ${year}.`);
+    return;
+  }
+
+  // 4) Estimate a smooth density surface and extract contours (isopleths)
+  const contours = d3.contourDensity()
+    .x(d => d.x)
+    .y(d => d.y)
+    .weight(d => d.weight)
+    .size([width, height - marginBottom - 10])
+    .bandwidth(40)   // smoothing; increase = smoother surface
+    .thresholds(10)  // number of contour levels
+    (points);
+
+  const valuesExtent = d3.extent(contours, d => d.value);
+  const minD = valuesExtent[0] ?? 0;
+  const maxD = valuesExtent[1] ?? 1;
+
+  const color = d3.scaleSequential(d3.interpolateOrRd)
+    .domain([minD, maxD]);
+
+  const contourPath = d3.geoPath(); // projection=null → screen coordinates
+
+  svg.append("g")
+    .attr("class", "contours")
+    .selectAll("path")
+    .data(contours)
+    .join("path")
+      .attr("d", contourPath)
+      .attr("fill", d => color(d.value))
+      .attr("stroke", "none")
+      .attr("opacity", 0.85);
+
+  // Optional: on hover show generic tooltip about intensity
+  svg.selectAll("path")
+    .on("mousemove", (ev, d) => {
+      const html =
+        `<strong>Relative conflict intensity</strong><br/>` +
+        `Isopleth level: ${d.value.toFixed(2)} (smoothed)`;
+      showTooltip(ev, html);
+    })
+    .on("mouseleave", hideTooltip);
+
+  // 5) Simple legend in the bottom-right corner
+  const legendWidth  = 200;
+  const legendHeight = 10;
+  const legendX = width - legendWidth - 24;
+  const legendY = height - marginBottom - 20;
+
+  const defs = svg.append("defs");
+  const gradient = defs.append("linearGradient")
+    .attr("id", "contour-gradient");
+
+  gradient.append("stop")
+    .attr("offset", "0%")
+    .attr("stop-color", color(minD));
+
+  gradient.append("stop")
+    .attr("offset", "100%")
+    .attr("stop-color", color(maxD));
+
+  svg.append("rect")
+    .attr("x", legendX)
+    .attr("y", legendY)
+    .attr("width", legendWidth)
+    .attr("height", legendHeight)
+    .attr("fill", "url(#contour-gradient)");
+
+  const legendScale = d3.scaleLinear()
+    .domain([minD, maxD])
+    .range([legendX, legendX + legendWidth]);
+
+  svg.append("g")
+    .attr("class", "axis")
+    .attr("transform", `translate(0, ${legendY + legendHeight})`)
+    .call(
+      d3.axisBottom(legendScale)
+        .ticks(3)
+        .tickFormat(d3.format(".2f"))
+    );
+
+  svg.append("text")
+    .attr("x", legendX + legendWidth / 2)
+    .attr("y", legendY - 6)
+    .attr("text-anchor", "middle")
+    .attr("font-size", 12)
+    .attr("fill", "#555")
+    .text("Smoothed conflict intensity (isopleths)");
 }
