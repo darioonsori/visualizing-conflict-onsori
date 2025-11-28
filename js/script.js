@@ -1759,12 +1759,19 @@ function drawContourMap(sel, worldFC, dataRows, year) {
   const minD = valuesExtent[0] ?? 0;
   const maxD = valuesExtent[1] ?? 1;
 
+  // scala colori resta sui valori "reali"
   const color = d3.scaleSequential(d3.interpolateOrRd)
     .domain([minD, maxD]);
 
+  // scala normalizzata 0–1 per legenda e tooltip
+  const norm = d3.scaleLinear()
+    .domain([minD, maxD])
+    .range([0, 1]);
+
   const contourPath = d3.geoPath(); // projection=null → screen coordinates
 
-  svg.append("g")
+  // disegno solo il gruppo delle isoplete
+  const contoursG = svg.append("g")
     .attr("class", "contours")
     .selectAll("path")
     .data(contours)
@@ -1772,14 +1779,15 @@ function drawContourMap(sel, worldFC, dataRows, year) {
       .attr("d", contourPath)
       .attr("fill", d => color(d.value))
       .attr("stroke", "none")
-      .attr("opacity", 0.78);
+      .attr("opacity", 0.85);
 
-  // On hover show generic tooltip about intensity
-  svg.selectAll("path")
+  // Tooltip SOLO sulle isoplete, con percentuale del massimo
+  contoursG
     .on("mousemove", (ev, d) => {
+      const perc = norm(d.value) * 100;
       const html =
         `<strong>Relative conflict intensity</strong><br/>` +
-        `Isopleth level: ${d.value.toFixed(2)} (smoothed)`;
+        `Isopleth level: ${perc.toFixed(0)}% of max (smoothed)`;
       showTooltip(ev, html);
     })
     .on("mouseleave", hideTooltip);
@@ -1809,8 +1817,9 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     .attr("height", legendHeight)
     .attr("fill", "url(#contour-gradient)");
 
+  // legenda normalizzata 0–1 → percentuali
   const legendScale = d3.scaleLinear()
-    .domain([minD, maxD])
+    .domain([0, 1])
     .range([legendX, legendX + legendWidth]);
 
   svg.append("g")
@@ -1819,7 +1828,7 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     .call(
       d3.axisBottom(legendScale)
         .ticks(3)
-        .tickFormat(d3.format(".2f"))
+        .tickFormat(d3.format(".0%"))
     );
 
   svg.append("text")
@@ -1828,6 +1837,6 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     .attr("text-anchor", "middle")
     .attr("font-size", 12)
     .attr("fill", "#555")
-    .text("Smoothed conflict intensity (isopleths)");
+    .text("Smoothed conflict intensity (relative)");
   }
   
