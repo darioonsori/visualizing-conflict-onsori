@@ -1336,158 +1336,172 @@ function drawTimeSeries(sel, worldRows) {
     .text("Conflict-related deaths (World total)");
 }
 
-/* 10) Choropleth map — total conflict-related deaths per country (snapshot year) */
+/* 10) Choropleth map — conflict-related deaths per country (snapshot year) */
 function drawChoropleth(sel, worldFC, dataRows, year) {
+  // 0) Controllo GeoJSON
   if (!worldFC || !Array.isArray(worldFC.features) || !worldFC.features.length) {
     alertIn(sel, "World boundaries are missing or invalid.");
     return;
   }
-
   const features = worldFC.features;
 
+  // 1) Dati per l’anno scelto
   const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
   if (!rows.length) {
-    alertIn(sel, No country data for year ${year}.);
+    alertIn(sel, `No country data for year ${year}.`);
     return;
   }
 
+  // Lookup ISO3 → valore totale
   const valueByISO = {};
   rows.forEach(d => {
     const iso = d.code;
-    const val = +d.total;
-    if (!Number.isNaN(val)) {
-      valueByISO[iso] = val;
-    }
+    const val = +d.total || 0;
+    valueByISO[iso] = val;
   });
 
-  const positiveValues = Object
-    .values(valueByISO)
-    .filter(v => v > 0);
-
-  let maxVal = d3.max(positiveValues) || 1;
-  if (maxVal < 1) {
-    maxVal = 1;
+  const positiveValues = Object.values(valueByISO).filter(v => v > 0);
+  if (!positiveValues.length) {
+    alertIn(sel, `No positive country totals for ${year}.`);
+    return;
   }
 
-  const width  = 900;
-  const height = 420;
-  const marginBottom = 40;
+  const maxVal  = d3.max(positiveValues) || 1;
+  const logMax  = Math.log10(maxVal + 1);
+
+  // Scala colore: usiamo il log nei valori, ma una normale sequential
+  const color = d3.scaleSequential(d3.interpolateOrRd)
+    .domain([0, logMax]);   // 0 → valori bassi, logMax → valori più alti
+
+  const width        = 900;
+  const height       = 360;
+  const legendHeight = 44;  // spazio per la legenda in alto
 
   const svg = d3.select(sel).html("")
     .append("svg")
     .attr("width", width)
     .attr("height", height);
 
-  // Ensure the tooltip is hidden when leaving the map container.
+  // Nascondi tooltip uscendo dall’area della mappa
   d3.select(sel).on("mouseleave", hideTooltip);
 
+  // 2) Proiezione (coerente con la mappa a cerchi)
   const projection = d3.geoNaturalEarth1()
-    .fitSize([width, height - marginBottom - 10], worldFC);
+    .fitSize([width, height - legendHeight], worldFC);
 
   const path = d3.geoPath(projection);
 
-  const color = d3.scaleSequentialLog()
-    .domain([1, maxVal])
-    .interpolator(d3.interpolateOrRd);
+  // Helper ISO3 dal GeoJSON
+  const getISO3 = feat => {
+    const p = feat.properties || {};
+    return (p.iso_a3 || p.ISO_A3 || "").toUpperCase();
+  };
 
+  const fmt = d3.format(",");
+
+  // 3) Disegno paesi
   svg.append("g")
     .selectAll("path")
     .data(features)
     .join("path")
-    .attr("d", path)
-    .attr("fill", d => {
-      const iso = (
-        d.properties.iso_a3 ||
-        d.properties.ISO_A3 ||
-        ""
-      ).toUpperCase();
+      .attr("d", path)
+      .attr("stroke", "#d1d5db")
+      .attr("stroke-width", 0.5)
+      .attr("fill", d => {
+        const iso = getISO3(d);
+        const v   = valueByISO[iso];
 
-      const val = valueByISO[iso];
-      return val > 0 ? color(val) : "#e5e7eb";
-    })
-    .attr("stroke", "#9ca3af")
-    .attr("stroke-width", 0.4)
-    .on("mousemove", (ev, d) => {
-      const iso = (
-        d.properties.iso_a3 ||
-        d.properties.ISO_A3 ||
-        ""
-      ).toUpperCase();
+        if (v > 0) {
+          return color(Math.log10(v + 1));
+        }
 
-      const name =
-        d.properties.name ||
-        d.properties.ADMIN ||
-        "Unknown country";
+        // Paesi nel dataset ma con 0 decessi → grigio chiaro
+        if (Object.prototype.hasOwnProperty.call(valueByISO, iso)) {
+          return "#e5e7eb";
+        }
 
-      const val = valueByISO[iso];
+        // Paesi senza dati in questo dataset → ancora più chiaro
+        return "#f3f4f6";
+      })
+      .on("mousemove", (ev, d) => {
+        const iso = getISO3(d);
+        const v   = valueByISO[iso];
+        const hasRecord = Object.prototype.hasOwnProperty.call(valueByISO, iso);
 
-      let html;
-      if (val === undefined) {
-        html =
-          <strong>${name}</strong><br/> +
-          No data in this dataset in ${year};
-      } else if (val === 0) {
-        html =
-          <strong>${name}</strong><br/> +
-          0 conflict-related deaths in ${year};
-      } else {
-        html =
-          <strong>${name}</strong><br/> +
-          ${d3.format(",")(val)} deaths in ${year};
-      }
+        const name =
+          d.properties?.name ||
+          d.properties?.ADMIN ||
+          iso || "Unknown";
 
-      showTooltip(ev, html);
-    })
-    .on("mouseleave", hideTooltip);
+        let html;
+        if (v > 0) {
+          html =
+            `<strong>${name}</strong><br/>` +
+            `${fmt(v)} conflict-related deaths in ${year}`;
+        } else if (hasRecord) {
+          html =
+            `<strong>${name}</strong><br/>` +
+            `0 conflict-related deaths recorded in the dataset for ${year}`;
+        } else {
+          html =
+            `<strong>${name}</strong><br/>` +
+            `No country-level data in this dataset for ${year}`;
+        }
 
-  // Continuous legend on a logarithmic scale.
+        showTooltip(ev, html);
+      })
+      .on("mouseleave", hideTooltip);
+
+  // 4) Legenda (barra + scala logaritmica)
   const legendWidth  = 260;
-  const legendHeight = 10;
+  const legendInnerH = 10;
+  const legendX      = (width - legendWidth) / 2;
+  const legendY      = 10;
 
-  const legendGroup = svg.append("g")
-    .attr(
-      "transform",
-      translate(${(width - legendWidth) / 2}, ${height - marginBottom + 12})
-    );
+  const defs  = svg.append("defs");
+  const grad  = defs.append("linearGradient")
+    .attr("id", "choropleth-grad")
+    .attr("x1", "0%").attr("x2", "100%")
+    .attr("y1", "0%").attr("y2", "0%");
 
-  const defs = svg.append("defs");
-  const gradient = defs.append("linearGradient")
-    .attr("id", "choropleth-gradient");
-
+  // campioniamo lungo il range logaritmico
   const stops = 10;
-  const logMin = Math.log(1);
-  const logMax = Math.log(maxVal);
-
   for (let i = 0; i <= stops; i += 1) {
     const t   = i / stops;
-    const val = Math.exp(logMin + t * (logMax - logMin));
+    const val = 1 + t * (maxVal - 1);               // da 1 a maxVal
+    const col = color(Math.log10(val + 1));         // stesso mapping usato sopra
 
-    gradient.append("stop")
-      .attr("offset", ${t * 100}%)
-      .attr("stop-color", color(val));
+    grad.append("stop")
+      .attr("offset", `${t * 100}%`)
+      .attr("stop-color", col);
   }
 
-  legendGroup.append("rect")
+  // rettangolo con gradiente
+  svg.append("rect")
+    .attr("x", legendX)
+    .attr("y", legendY)
     .attr("width", legendWidth)
-    .attr("height", legendHeight)
-    .attr("fill", "url(#choropleth-gradient)");
+    .attr("height", legendInnerH)
+    .attr("fill", "url(#choropleth-grad)");
 
+  // scala log per i tick numerici
   const legendScale = d3.scaleLog()
     .domain([1, maxVal])
-    .range([0, legendWidth]);
+    .range([legendX, legendX + legendWidth]);
 
-  legendGroup.append("g")
+  svg.append("g")
     .attr("class", "axis")
-    .attr("transform", translate(0, ${legendHeight}))
-    .call(d3.axisBottom(legendScale).ticks(4, "~s"));
+    .attr("transform", `translate(0, ${legendY + legendInnerH})`)
+    .call(d3.axisBottom(legendScale).ticks(3, "~s"));
 
-  legendGroup.append("text")
-    .attr("x", legendWidth / 2)
-    .attr("y", -6)
+  svg.append("text")
+    .attr("x", legendX + legendWidth / 2)
+    .attr("y", legendY - 4)
     .attr("text-anchor", "middle")
-    .attr("font-size", 12)
     .attr("fill", "#555")
+    .attr("font-size", 12)
     .text("Total conflict-related deaths (log scale)");
+
 }
 
 /* 11) Proportional symbol map — country totals as circles (snapshot year)
