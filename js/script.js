@@ -3,22 +3,22 @@
  * Dataset: UCDP via Our World in Data
  *
  * Section 1 — Comparing categories
- *  1) Top-10 barchart (absolute)            → #bar-top10
- *  2) Grouped barchart (selected countries) → #grouped
- *  3) Heatmap (World totals, type × year)   → #heatmap
- *  4) 100% stacked barchart (World shares)  → #stack100
- *  5) Waffle chart (World composition Y)    → #waffle
+ *  1) Top-10 barchart (absolute)            -> #bar-top10
+ *  2) Grouped barchart (selected countries) -> #grouped
+ *  3) Heatmap (World totals, type × year)   -> #heatmap
+ *  4) 100% stacked barchart (World shares)  -> #stack100
+ *  5) Waffle chart (World composition Y)    -> #waffle
  *
  * Section 2 — Distributions (snapshot year)
- *  6) Histogram (country totals)            → #histogram
- *  7) Violin plot (by conflict type)        → #violin
- *  8) Boxplot (by conflict type)            → #boxplot
+ *  6) Histogram (country totals)            -> #histogram
+ *  7) Violin plot (by conflict type)        -> #violin
+ *  8) Boxplot (by conflict type)            -> #boxplot
  *
  * Section 3 — Temporal patterns
- *  9) Line chart (World totals over time)   → #timeseries
+ *  9) Line chart (World totals over time)   -> #timeseries
  *
  * Section 4 — Spatial patterns
- * 10) Choropleth map (country totals, Y)    → #map-choropleth
+ * 10) Choropleth map (country totals, Y)    -> #map-choropleth
  *******************************************************/
 
 /* ---------- Global configuration ---------- */
@@ -1359,7 +1359,7 @@ function drawChoropleth(sel, worldFC, dataRows, year) {
   }
   const features = worldFC.features;
 
-  // 1) Filter data for the selected year and build an ISO3 → value lookup
+  // 1) Filter data for the selected year and build an ISO3 -> value lookup
   const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
   if (!rows.length) {
     alertIn(sel, `No country data for year ${year}.`);
@@ -1508,7 +1508,7 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
   }
   const features = worldFC.features;
 
-  // 1) Filter data for the selected year and build an ISO3 → value lookup
+  // 1) Filter data for the selected year and build an ISO3 -> value lookup
   const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
   if (!rows.length) {
     alertIn(sel, `No country data for year ${year}.`);
@@ -1665,7 +1665,7 @@ function drawContourMap(sel, worldFC, dataRows, year) {
   }
   const features = worldFC.features;
 
-  // 1) Filter data for the selected year and build ISO3 → total lookup
+  // 1) Filter data for the selected year and build ISO3 -> total lookup
   const rows = dataRows.filter(d => d.year === year && isISO3(d.code));
   if (!rows.length) {
     alertIn(sel, `No country data for year ${year}.`);
@@ -1767,7 +1767,7 @@ function drawContourMap(sel, worldFC, dataRows, year) {
   const color = d3.scaleSequential(d3.interpolateOrRd)
     .domain([minD, maxD]);
 
-  const contourPath = d3.geoPath(); // projection=null → screen coordinates
+  const contourPath = d3.geoPath(); // projection=null -> screen coordinates
 
   svg.append("g")
     .attr("class", "contours")
