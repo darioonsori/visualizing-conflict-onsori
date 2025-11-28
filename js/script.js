@@ -1772,9 +1772,9 @@ function drawContourMap(sel, worldFC, dataRows, year) {
       .attr("d", contourPath)
       .attr("fill", d => color(d.value))
       .attr("stroke", "none")
-      .attr("opacity", 0.85);
+      .attr("opacity", 0.78);
 
-  // Optional: on hover show generic tooltip about intensity
+  // On hover show generic tooltip about intensity
   svg.selectAll("path")
     .on("mousemove", (ev, d) => {
       const html =
