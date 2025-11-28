@@ -578,6 +578,7 @@ function drawWorldHeatmap(sel, worldRows) {
     .attr("fill", "#555")
     .attr("font-size", 12)
     .text("Number of deaths (log scale)");
+}
   
 
 /* 4) 100% stacked barchart — World shares by type over time */
@@ -1829,5 +1830,4 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     .attr("fill", "#555")
     .text("Smoothed conflict intensity (isopleths)");
   }
-}
   
