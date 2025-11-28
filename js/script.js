@@ -1618,7 +1618,9 @@ function drawProportionalMap(sel, worldFC, dataRows, year) {
       .on("mouseleave", hideTooltip);
 
   // 7) Simple bubble legend (bottom-right corner)
-  let legendVals = [maxVal / 3, (2 * maxVal) / 3, maxVal]
+  // Use "nice" rounded values to make the legend easier to read
+  const niceMax = d3.tickStep(0, maxVal, 1);   // e.g. 80k for 75k
+  let legendVals = [niceMax / 4, niceMax / 2, niceMax]
     .map(v => Math.round(v))
     .filter((v, i, arr) => v > 0 && arr.indexOf(v) === i);
 
