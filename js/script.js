@@ -1910,127 +1910,158 @@ function drawSankey(sel, data, year) {
     return;
   }
 
-  // --- Parameters you can tweak ---
-  const TOP_N = 10;                // how many countries to show explicitly
-  const OTHER_LABEL = "Other countries";
-  const width = 900;
-  const height = 430;
-  const margin = { top: 12, right: 18, bottom: 10, left: 18 };
+  // --- Settings (tweak if needed) ---
+  const TOP_N = 10; // Top 10 + "Other countries"
+  const MIN_FLOW = 0; // keep 0 to include all positive flows
+  const height = 520; // increased height to reduce label crowding
+  const margin = { top: 14, right: 22, bottom: 14, left: 22 };
+  const nodeWidth = 16;
+  const nodePadding = 16; // increased padding
 
-  // Filter snapshot rows
-  const snap = data.filter(d => d.year === year && (d.total || 0) > 0);
-  if (!snap.length) {
+  // --- Prepare data ---
+  const yearRows = data.filter(d => d.year === year && d.total > 0);
+  if (!yearRows.length) {
     alertIn(sel, `No country data for year ${year}.`);
     return;
   }
 
-  // ---------------------------------------------------------------------------
-  // (1) Robust totals per country + sorted countries
-  // ---------------------------------------------------------------------------
-  const totalsByCountry = d3.rollup(
-    snap,
-    v => d3.sum(v, d => d.total || 0),
-    d => d.entity
-  );
+  // Top N countries by total
+  const top = yearRows
+    .slice()
+    .sort((a, b) => d3.descending(a.total, b.total))
+    .slice(0, TOP_N);
 
-  const sortedCountries = Array.from(totalsByCountry.entries())
-    .sort((a, b) => d3.descending(a[1], b[1]))
-    .map(d => d[0]);
+  const topNames = new Set(top.map(d => d.entity));
+  const others = yearRows.filter(d => !topNames.has(d.entity));
 
-  const topCountries = sortedCountries.slice(0, TOP_N);
-
-  // ---------------------------------------------------------------------------
-  // (2) Dominant type per country (for opacity emphasis)
-  // ---------------------------------------------------------------------------
-  const dominantTypeByCountry = {};
-  topCountries.forEach(c => {
-    const rows = snap.filter(d => d.entity === c);
-    // In your data there should be 1 row per country-year, but this is safe anyway.
-    let bestType = TYPE_ORDER[0];
-    let bestVal = -Infinity;
-
-    TYPE_ORDER.forEach(t => {
-      const v = d3.sum(rows, d => (+d[t] || 0));
-      if (v > bestVal) {
-        bestVal = v;
-        bestType = t;
-      }
-    });
-
-    dominantTypeByCountry[c] = bestType;
+  // Aggregate "Other countries" by type
+  const otherAgg = { entity: "Other countries" };
+  TYPE_ORDER.forEach(t => {
+    otherAgg[t] = d3.sum(others, d => Math.max(0, +d[t] || 0));
   });
+  otherAgg.total = d3.sum(TYPE_ORDER, t => otherAgg[t] || 0);
 
-  // ---------------------------------------------------------------------------
-  // Build nodes: left = types, right = countries (+ other)
-  // ---------------------------------------------------------------------------
+  // Build nodes: left = types, right = (top countries + other if any)
   const typeNodes = TYPE_ORDER.map(t => ({ id: `type:${t}`, label: t, kind: "type" }));
 
-  const countryNodes = topCountries.map(c => ({
-    id: `c:${c}`,
-    label: c,
+  const countryNodes = top.map(d => ({
+    id: `c:${d.entity}`,
+    label: d.entity,
     kind: "country",
-    total: totalsByCountry.get(c) || 0
+    total: d.total
   }));
 
-  // Include "Other countries" node only if needed
-  const hasOther = sortedCountries.length > TOP_N;
-  const otherNode = hasOther
-    ? [{ id: `c:${OTHER_LABEL}`, label: OTHER_LABEL, kind: "country", total: 0 }]
-    : [];
+  // Append "Other countries" only if it has some flow
+  const includeOther = otherAgg.total > 0;
+  if (includeOther) {
+    countryNodes.push({
+      id: "c:Other countries",
+      label: "Other countries",
+      kind: "country",
+      total: otherAgg.total,
+      isOther: true
+    });
+  }
 
-  const nodes = [...typeNodes, ...countryNodes, ...otherNode];
+  const nodes = [...typeNodes, ...countryNodes];
 
-  // ---------------------------------------------------------------------------
-  // Links: type -> (country or other)
-  // ---------------------------------------------------------------------------
+  // Links: type -> country, value = deaths of that type in that country
   const links = [];
 
-  snap.forEach(d => {
-    const targetCountry = topCountries.includes(d.entity) ? d.entity : OTHER_LABEL;
-    if (!topCountries.includes(d.entity) && !hasOther) return;
-
+  // Top countries links
+  top.forEach(d => {
     TYPE_ORDER.forEach(t => {
-      const v = +d[t] || 0;
-      if (v > 0) {
+      const v = Math.max(0, +d[t] || 0);
+      if (v > MIN_FLOW) {
         links.push({
           source: `type:${t}`,
-          target: `c:${targetCountry}`,
+          target: `c:${d.entity}`,
           value: v,
           type: t,
-          country: targetCountry
+          country: d.entity,
+          isOther: false
         });
       }
     });
   });
+
+  // Other aggregated links
+  if (includeOther) {
+    TYPE_ORDER.forEach(t => {
+      const v = Math.max(0, +otherAgg[t] || 0);
+      if (v > MIN_FLOW) {
+        links.push({
+          source: `type:${t}`,
+          target: "c:Other countries",
+          value: v,
+          type: t,
+          country: "Other countries",
+          isOther: true
+        });
+      }
+    });
+  }
 
   if (!links.length) {
     alertIn(sel, `No positive flows for ${year}.`);
     return;
   }
 
-  // ---------------------------------------------------------------------------
-  // Render
-  // ---------------------------------------------------------------------------
-  const svg = d3.select(sel).html("")
+  // --- Responsive width from container ---
+  const container = d3.select(sel);
+  container.html(""); // clear
+
+  const containerNode = container.node();
+  const width = Math.max(720, Math.floor(containerNode.getBoundingClientRect().width || 900));
+
+  const svg = container
     .append("svg")
     .attr("width", width)
     .attr("height", height);
 
+  // keep tooltip sane
   d3.select(sel).on("mouseleave", hideTooltip);
 
+  // --- Sankey layout ---
   const sankey = d3.sankey()
     .nodeId(d => d.id)
-    .nodeWidth(16)
-    .nodePadding(10)
+    .nodeWidth(nodeWidth)
+    .nodePadding(nodePadding)
     .extent([[margin.left, margin.top], [width - margin.right, height - margin.bottom]]);
 
-  // IMPORTANT: sankey mutates input; clone to keep safe
+  // sankey mutates input => clone
   const graph = sankey({
     nodes: nodes.map(d => ({ ...d })),
     links: links.map(d => ({ ...d }))
   });
 
-  // Links
+  // --- Helpers for hover highlight ---
+  const LINK_OPACITY_DEFAULT = 0.35;
+  const LINK_OPACITY_DIM = 0.06;
+  const LINK_OPACITY_FOCUS = 0.92;
+
+  function resetHighlight() {
+    link
+      .attr("stroke-opacity", LINK_OPACITY_DEFAULT)
+      .attr("stroke-width", d => Math.max(1, d.width));
+    nodeRects
+      .attr("opacity", d => (d.kind === "type" ? 0.85 : 0.7));
+  }
+
+  function focusLinks(predicate) {
+    link
+      .attr("stroke-opacity", d => (predicate(d) ? LINK_OPACITY_FOCUS : LINK_OPACITY_DIM))
+      .attr("stroke-width", d => (predicate(d) ? Math.max(1.5, d.width + 0.5) : Math.max(1, d.width)));
+  }
+
+  function focusNode(n) {
+    nodeRects
+      .attr("opacity", d => (d.id === n.id ? 1 : (d.kind === "type" ? 0.25 : 0.2)));
+
+    focusLinks(d => d.source.id === n.id || d.target.id === n.id);
+  }
+
+  // --- Links ---
   const link = svg.append("g")
     .attr("fill", "none")
     .selectAll("path")
@@ -2038,67 +2069,81 @@ function drawSankey(sel, data, year) {
     .join("path")
     .attr("d", d3.sankeyLinkHorizontal())
     .attr("stroke", d => TYPE_COLORS(d.type))
+    .attr("stroke-opacity", LINK_OPACITY_DEFAULT)
     .attr("stroke-width", d => Math.max(1, d.width))
-    .attr("stroke-opacity", d => {
-      // (3) Emphasize dominant type links for top countries
-      if (d.country === OTHER_LABEL) return 0.20;
+    .on("mouseenter", (ev, d) => {
+      // highlight only this link
+      focusLinks(x => x === d);
 
-      const dom = dominantTypeByCountry[d.country];
-      if (!dom) return 0.35;
-      return d.type === dom ? 0.75 : 0.25;
-    })
-    .on("mousemove", (ev, d) => {
+      const labelCountry = d.isOther ? "Other countries (aggregated)" : d.country;
       const html =
-        `<strong>${d.type}</strong> → <strong>${d.country}</strong><br/>` +
+        `<strong>${d.type}</strong> → <strong>${labelCountry}</strong><br/>` +
         `${d3.format(",")(Math.round(d.value))} deaths (${year})`;
       showTooltip(ev, html);
     })
-    .on("mouseleave", hideTooltip);
+    .on("mousemove", (ev, d) => {
+      const labelCountry = d.isOther ? "Other countries (aggregated)" : d.country;
+      const html =
+        `<strong>${d.type}</strong> → <strong>${labelCountry}</strong><br/>` +
+        `${d3.format(",")(Math.round(d.value))} deaths (${year})`;
+      showTooltip(ev, html);
+    })
+    .on("mouseleave", () => {
+      hideTooltip();
+      resetHighlight();
+    });
 
-  // Nodes
+  // --- Nodes ---
   const node = svg.append("g")
     .selectAll("g")
     .data(graph.nodes)
     .join("g");
 
-  node.append("rect")
+  const nodeRects = node.append("rect")
     .attr("x", d => d.x0)
     .attr("y", d => d.y0)
     .attr("height", d => Math.max(1, d.y1 - d.y0))
     .attr("width", d => d.x1 - d.x0)
     .attr("rx", 3)
-    .attr("fill", d => d.kind === "type" ? TYPE_COLORS(d.label) : "#9ca3af")
-    .attr("opacity", d => d.kind === "type" ? 0.85 : (d.label === OTHER_LABEL ? 0.55 : 0.7))
-    .on("mousemove", (ev, d) => {
+    .attr("fill", d => (d.kind === "type" ? TYPE_COLORS(d.label) : "#9ca3af"))
+    .attr("opacity", d => (d.kind === "type" ? 0.85 : 0.7))
+    .on("mouseenter", (ev, d) => {
+      focusNode(d);
+
       const v = d.value || 0;
-
-      // extra info for countries: show dominant type
-      let extra = "";
-      if (d.kind === "country" && d.label !== OTHER_LABEL) {
-        const dom = dominantTypeByCountry[d.label];
-        if (dom) extra = `<br/>Dominant type: <strong>${dom}</strong>`;
-      }
-
-      const html = `<strong>${d.label}</strong><br/>Total flow: ${d3.format(",")(Math.round(v))}${extra}`;
+      const name = d.isOther ? "Other countries (aggregated)" : d.label;
+      const html =
+        `<strong>${name}</strong><br/>` +
+        `Total flow: ${d3.format(",")(Math.round(v))}`;
       showTooltip(ev, html);
     })
-    .on("mouseleave", hideTooltip);
+    .on("mousemove", (ev, d) => {
+      const v = d.value || 0;
+      const name = d.isOther ? "Other countries (aggregated)" : d.label;
+      const html =
+        `<strong>${name}</strong><br/>` +
+        `Total flow: ${d3.format(",")(Math.round(v))}`;
+      showTooltip(ev, html);
+    })
+    .on("mouseleave", () => {
+      hideTooltip();
+      resetHighlight();
+    });
 
-  // Labels
+  // --- Labels ---
   node.append("text")
-    .attr("x", d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
+    .attr("x", d => (d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6))
     .attr("y", d => (d.y0 + d.y1) / 2)
     .attr("dy", "0.32em")
-    .attr("text-anchor", d => d.x0 < width / 2 ? "start" : "end")
+    .attr("text-anchor", d => (d.x0 < width / 2 ? "start" : "end"))
     .attr("font-size", 12)
     .attr("fill", "#111827")
     .text(d => d.label);
 
   // Caption
-  d3.select(sel)
-    .append("div")
+  container.append("div")
     .attr("class", "caption")
-    .text(`Sankey (Top ${TOP_N} countries + ${OTHER_LABEL}) — link width encodes deaths (flow) in ${year}.`);
+    .text(`Sankey (Top ${TOP_N} countries + Other countries) — link width encodes deaths (flow) in ${year}.`);
 }
 
 /* 14) Country similarity network — force-directed graph (snapshot year) */
