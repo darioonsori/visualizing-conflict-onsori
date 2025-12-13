@@ -1910,15 +1910,58 @@ function drawSankey(sel, data, year) {
     return;
   }
 
-  // --- Settings (tweak if needed) ---
-  const TOP_N = 10; // Top 10 + "Other countries"
-  const MIN_FLOW = 0; // keep 0 to include all positive flows
-  const height = 520; // increased height to reduce label crowding
-  const margin = { top: 14, right: 22, bottom: 14, left: 22 };
-  const nodeWidth = 16;
-  const nodePadding = 16; // increased padding
+  // ======================
+  // Settings (tweak here)
+  // ======================
+  const TOP_N = 10;               // Top N countries + Other countries
+  const MIN_FLOW = 0;             // keep all positive flows
+  const HEIGHT = 540;             // more vertical space -> less crowding
+  const MARGIN = { top: 14, right: 24, bottom: 14, left: 24 };
+  const NODE_WIDTH = 16;
+  const NODE_PADDING = 18;
+  const LABEL_MAX_CHARS = 18;     // truncate long labels (tooltip always shows full)
+  const LINK_OPACITY_DEFAULT = 0.35;
+  const LINK_OPACITY_DIM = 0.06;
+  const LINK_OPACITY_FOCUS = 0.92;
 
-  // --- Prepare data ---
+  // ======================
+  // Helpers: naming/labels
+  // ======================
+  const COUNTRY_ALIASES = new Map([
+    ["Democratic Republic of Congo", "DR Congo"],
+    ["Democratic Republic of the Congo", "DR Congo"],
+    ["Congo, Dem. Rep.", "DR Congo"],
+    ["Central African Republic", "CAR"],
+    ["United States", "USA"],
+    ["United Kingdom", "UK"],
+    ["Russian Federation", "Russia"],
+    ["Iran (Islamic Republic of)", "Iran"],
+    ["Syrian Arab Republic", "Syria"],
+    ["Venezuela (Bolivarian Republic of)", "Venezuela"],
+    ["Bolivia (Plurinational State of)", "Bolivia"],
+    ["Tanzania, United Republic of", "Tanzania"],
+    ["Viet Nam", "Vietnam"],
+    ["Lao People's Democratic Republic", "Laos"],
+    ["Myanmar (Burma)", "Myanmar"]
+  ]);
+
+  function prettyCountryName(name) {
+    return COUNTRY_ALIASES.get(name) || name;
+  }
+
+  function truncateLabel(s, maxChars = LABEL_MAX_CHARS) {
+    const str = String(s ?? "");
+    if (str.length <= maxChars) return str;
+    return str.slice(0, Math.max(1, maxChars - 1)) + "…";
+  }
+
+  function fmtInt(x) {
+    return d3.format(",")(Math.round(+x || 0));
+  }
+
+  // ======================
+  // Prepare year data
+  // ======================
   const yearRows = data.filter(d => d.year === year && d.total > 0);
   if (!yearRows.length) {
     alertIn(sel, `No country data for year ${year}.`);
@@ -1940,36 +1983,54 @@ function drawSankey(sel, data, year) {
     otherAgg[t] = d3.sum(others, d => Math.max(0, +d[t] || 0));
   });
   otherAgg.total = d3.sum(TYPE_ORDER, t => otherAgg[t] || 0);
+  const includeOther = otherAgg.total > 0;
 
-  // Build nodes: left = types, right = (top countries + other if any)
-  const typeNodes = TYPE_ORDER.map(t => ({ id: `type:${t}`, label: t, kind: "type" }));
-
-  const countryNodes = top.map(d => ({
-    id: `c:${d.entity}`,
-    label: d.entity,
-    kind: "country",
-    total: d.total
+  // ======================
+  // Build nodes
+  // ======================
+  const typeNodes = TYPE_ORDER.map((t, i) => ({
+    id: `type:${t}`,
+    label: t,
+    kind: "type",
+    sortKey: i
   }));
 
-  // Append "Other countries" only if it has some flow
-  const includeOther = otherAgg.total > 0;
+  // countries sorted by total desc
+  const topSorted = top
+    .slice()
+    .sort((a, b) => d3.descending(a.total, b.total));
+
+  const countryNodes = topSorted.map((d, i) => ({
+    id: `c:${d.entity}`,
+    label: prettyCountryName(d.entity),
+    fullLabel: d.entity,                 // original (for tooltip)
+    kind: "country",
+    total: d.total,
+    sortKey: i,
+    isOther: false
+  }));
+
   if (includeOther) {
     countryNodes.push({
       id: "c:Other countries",
       label: "Other countries",
+      fullLabel: "Other countries (aggregated)",
       kind: "country",
       total: otherAgg.total,
+      sortKey: 999999,                   // always last
       isOther: true
     });
   }
 
   const nodes = [...typeNodes, ...countryNodes];
 
-  // Links: type -> country, value = deaths of that type in that country
+  // ======================
+  // Build links
+  // ======================
   const links = [];
 
   // Top countries links
-  top.forEach(d => {
+  topSorted.forEach(d => {
     TYPE_ORDER.forEach(t => {
       const v = Math.max(0, +d[t] || 0);
       if (v > MIN_FLOW) {
@@ -1978,7 +2039,8 @@ function drawSankey(sel, data, year) {
           target: `c:${d.entity}`,
           value: v,
           type: t,
-          country: d.entity,
+          countryFull: d.entity,
+          countryPretty: prettyCountryName(d.entity),
           isOther: false
         });
       }
@@ -1995,7 +2057,8 @@ function drawSankey(sel, data, year) {
           target: "c:Other countries",
           value: v,
           type: t,
-          country: "Other countries",
+          countryFull: "Other countries (aggregated)",
+          countryPretty: "Other countries",
           isOther: true
         });
       }
@@ -2007,27 +2070,42 @@ function drawSankey(sel, data, year) {
     return;
   }
 
-  // --- Responsive width from container ---
+  // ======================
+  // Responsive width
+  // ======================
   const container = d3.select(sel);
   container.html(""); // clear
 
-  const containerNode = container.node();
-  const width = Math.max(720, Math.floor(containerNode.getBoundingClientRect().width || 900));
+  const w = Math.floor(container.node().getBoundingClientRect().width || 900);
+  const WIDTH = Math.max(760, w);
 
-  const svg = container
-    .append("svg")
-    .attr("width", width)
-    .attr("height", height);
+  const svg = container.append("svg")
+    .attr("width", WIDTH)
+    .attr("height", HEIGHT);
 
-  // keep tooltip sane
   d3.select(sel).on("mouseleave", hideTooltip);
 
-  // --- Sankey layout ---
+  // ======================
+  // Sankey layout (+ sorting!)
+  // ======================
   const sankey = d3.sankey()
     .nodeId(d => d.id)
-    .nodeWidth(nodeWidth)
-    .nodePadding(nodePadding)
-    .extent([[margin.left, margin.top], [width - margin.right, height - margin.bottom]]);
+    .nodeWidth(NODE_WIDTH)
+    .nodePadding(NODE_PADDING)
+    .extent([[MARGIN.left, MARGIN.top], [WIDTH - MARGIN.right, HEIGHT - MARGIN.bottom]])
+    .nodeSort((a, b) => {
+      // Keep types ordered by TYPE_ORDER (top->bottom)
+      if (a.kind === "type" && b.kind === "type") return d3.ascending(a.sortKey, b.sortKey);
+
+      // Keep countries ordered by total desc; Other always last via huge sortKey
+      if (a.kind === "country" && b.kind === "country") {
+        // primary: sortKey; (topSorted gives sortKey by rank)
+        return d3.ascending(a.sortKey, b.sortKey);
+      }
+
+      // If mixing kinds in same column (shouldn't happen): keep types before countries
+      return (a.kind === "type" ? -1 : 1);
+    });
 
   // sankey mutates input => clone
   const graph = sankey({
@@ -2035,34 +2113,33 @@ function drawSankey(sel, data, year) {
     links: links.map(d => ({ ...d }))
   });
 
-  // --- Helpers for hover highlight ---
-  const LINK_OPACITY_DEFAULT = 0.35;
-  const LINK_OPACITY_DIM = 0.06;
-  const LINK_OPACITY_FOCUS = 0.92;
-
+  // ======================
+  // Hover highlight helpers
+  // ======================
   function resetHighlight() {
-    link
+    linkSel
       .attr("stroke-opacity", LINK_OPACITY_DEFAULT)
       .attr("stroke-width", d => Math.max(1, d.width));
     nodeRects
-      .attr("opacity", d => (d.kind === "type" ? 0.85 : 0.7));
+      .attr("opacity", d => (d.kind === "type" ? 0.86 : 0.72));
   }
 
   function focusLinks(predicate) {
-    link
+    linkSel
       .attr("stroke-opacity", d => (predicate(d) ? LINK_OPACITY_FOCUS : LINK_OPACITY_DIM))
-      .attr("stroke-width", d => (predicate(d) ? Math.max(1.5, d.width + 0.5) : Math.max(1, d.width)));
+      .attr("stroke-width", d => (predicate(d) ? Math.max(1.6, d.width + 0.6) : Math.max(1, d.width)));
   }
 
   function focusNode(n) {
     nodeRects
       .attr("opacity", d => (d.id === n.id ? 1 : (d.kind === "type" ? 0.25 : 0.2)));
-
     focusLinks(d => d.source.id === n.id || d.target.id === n.id);
   }
 
-  // --- Links ---
-  const link = svg.append("g")
+  // ======================
+  // Draw links
+  // ======================
+  const linkSel = svg.append("g")
     .attr("fill", "none")
     .selectAll("path")
     .data(graph.links)
@@ -2071,21 +2148,20 @@ function drawSankey(sel, data, year) {
     .attr("stroke", d => TYPE_COLORS(d.type))
     .attr("stroke-opacity", LINK_OPACITY_DEFAULT)
     .attr("stroke-width", d => Math.max(1, d.width))
+    .style("mix-blend-mode", "multiply")
     .on("mouseenter", (ev, d) => {
-      // highlight only this link
       focusLinks(x => x === d);
-
-      const labelCountry = d.isOther ? "Other countries (aggregated)" : d.country;
+      const toName = d.isOther ? "Other countries (aggregated)" : d.countryFull;
       const html =
-        `<strong>${d.type}</strong> → <strong>${labelCountry}</strong><br/>` +
-        `${d3.format(",")(Math.round(d.value))} deaths (${year})`;
+        `<strong>${d.type}</strong> → <strong>${toName}</strong><br/>` +
+        `${fmtInt(d.value)} deaths (${year})`;
       showTooltip(ev, html);
     })
     .on("mousemove", (ev, d) => {
-      const labelCountry = d.isOther ? "Other countries (aggregated)" : d.country;
+      const toName = d.isOther ? "Other countries (aggregated)" : d.countryFull;
       const html =
-        `<strong>${d.type}</strong> → <strong>${labelCountry}</strong><br/>` +
-        `${d3.format(",")(Math.round(d.value))} deaths (${year})`;
+        `<strong>${d.type}</strong> → <strong>${toName}</strong><br/>` +
+        `${fmtInt(d.value)} deaths (${year})`;
       showTooltip(ev, html);
     })
     .on("mouseleave", () => {
@@ -2093,36 +2169,44 @@ function drawSankey(sel, data, year) {
       resetHighlight();
     });
 
-  // --- Nodes ---
-  const node = svg.append("g")
+  // ======================
+  // Draw nodes
+  // ======================
+  const nodeG = svg.append("g")
     .selectAll("g")
     .data(graph.nodes)
     .join("g");
 
-  const nodeRects = node.append("rect")
+  const nodeRects = nodeG.append("rect")
     .attr("x", d => d.x0)
     .attr("y", d => d.y0)
     .attr("height", d => Math.max(1, d.y1 - d.y0))
     .attr("width", d => d.x1 - d.x0)
     .attr("rx", 3)
-    .attr("fill", d => (d.kind === "type" ? TYPE_COLORS(d.label) : "#9ca3af"))
-    .attr("opacity", d => (d.kind === "type" ? 0.85 : 0.7))
+    .attr("fill", d => (d.kind === "type" ? TYPE_COLORS(d.label) : (d.isOther ? "#6b7280" : "#9ca3af")))
+    .attr("opacity", d => (d.kind === "type" ? 0.86 : 0.72))
     .on("mouseenter", (ev, d) => {
       focusNode(d);
 
-      const v = d.value || 0;
-      const name = d.isOther ? "Other countries (aggregated)" : d.label;
+      const total = d.value || 0;
+      const full = d.kind === "country"
+        ? (d.isOther ? "Other countries (aggregated)" : (d.fullLabel || d.label))
+        : d.label;
+
       const html =
-        `<strong>${name}</strong><br/>` +
-        `Total flow: ${d3.format(",")(Math.round(v))}`;
+        `<strong>${full}</strong><br/>` +
+        `Total flow: ${fmtInt(total)} (${year})`;
       showTooltip(ev, html);
     })
     .on("mousemove", (ev, d) => {
-      const v = d.value || 0;
-      const name = d.isOther ? "Other countries (aggregated)" : d.label;
+      const total = d.value || 0;
+      const full = d.kind === "country"
+        ? (d.isOther ? "Other countries (aggregated)" : (d.fullLabel || d.label))
+        : d.label;
+
       const html =
-        `<strong>${name}</strong><br/>` +
-        `Total flow: ${d3.format(",")(Math.round(v))}`;
+        `<strong>${full}</strong><br/>` +
+        `Total flow: ${fmtInt(total)} (${year})`;
       showTooltip(ev, html);
     })
     .on("mouseleave", () => {
@@ -2130,15 +2214,24 @@ function drawSankey(sel, data, year) {
       resetHighlight();
     });
 
-  // --- Labels ---
-  node.append("text")
-    .attr("x", d => (d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6))
+  // ======================
+  // Labels (truncated, tooltip keeps full)
+  // ======================
+  nodeG.append("text")
+    .attr("x", d => (d.x0 < WIDTH / 2 ? d.x1 + 6 : d.x0 - 6))
     .attr("y", d => (d.y0 + d.y1) / 2)
     .attr("dy", "0.32em")
-    .attr("text-anchor", d => (d.x0 < width / 2 ? "start" : "end"))
+    .attr("text-anchor", d => (d.x0 < WIDTH / 2 ? "start" : "end"))
     .attr("font-size", 12)
     .attr("fill", "#111827")
-    .text(d => d.label);
+    .text(d => truncateLabel(d.label))
+    .append("title")
+    .text(d => {
+      if (d.kind === "country") {
+        return d.isOther ? "Other countries (aggregated)" : (d.fullLabel || d.label);
+      }
+      return d.label;
+    });
 
   // Caption
   container.append("div")
