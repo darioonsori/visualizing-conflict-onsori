@@ -61,7 +61,9 @@ const ALL_VIZ_SELECTORS = [
   "#timeseries",
   "#map-choropleth",
   "#map-symbol",
-  "#map-contour"
+  "#map-contour",
+  "#sankey",
+  "#network"
 ];
 
 /* ---------- Shared tooltip ---------- */
@@ -240,6 +242,8 @@ Promise.all([
   d3.select("#year-grouped").text(SNAPSHOT_YEAR);
   d3.select("#year-waffle").text(SNAPSHOT_YEAR);
   d3.select("#waffle-year").text(SNAPSHOT_YEAR);
+  d3.select("#year-sankey").text(SNAPSHOT_YEAR);
+  d3.select("#year-network").text(SNAPSHOT_YEAR);
 
   /* ---- Section 1: Comparing categories ---- */
 
@@ -281,6 +285,10 @@ Promise.all([
     console.error("Failed to render contour map:", e);
     alertIn("#map-contour", "Could not render contour map (GeoJSON error).");
   }
+
+  /* ---- Section 5: Connection visualization ---- */
+  drawSankey("#sankey", countries, SNAPSHOT_YEAR);
+  drawCountrySimilarityNetwork("#network", countries, SNAPSHOT_YEAR);
   
 }).catch(err => {
   console.error(err);
@@ -288,6 +296,7 @@ Promise.all([
     alertIn(sel, "Failed to load data. Expected CSV and GeoJSON in /data.")
   );
 });
+
 
 /* ===================== CHARTS ===================== */
 
@@ -1857,4 +1866,324 @@ function drawContourMap(sel, worldFC, dataRows, year) {
     .attr("font-size", 12)
     .attr("fill", "#555")
     .text("Smoothed conflict intensity (relative to max)");
+}
+
+/* ===================== CONNECTION VIS (Sankey + Network) ===================== */
+
+/**
+ * Utility: get top N countries by total for a given year.
+ */
+function topCountriesByTotal(data, year, N = 12) {
+  return data
+    .filter(d => d.year === year && d.total > 0)
+    .slice()
+    .sort((a, b) => d3.descending(a.total, b.total))
+    .slice(0, N);
+}
+
+/**
+ * Utility: safe numeric vector for a country (by conflict type).
+ */
+function typeVector(d) {
+  return TYPE_ORDER.map(k => Math.max(0, +d[k] || 0));
+}
+
+/**
+ * Utility: cosine similarity between two non-negative vectors.
+ */
+function cosineSim(a, b) {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    dot += a[i] * b[i];
+    na  += a[i] * a[i];
+    nb  += b[i] * b[i];
+  }
+  if (na <= 0 || nb <= 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+/* 13) Sankey diagram — flows Type -> Country (snapshot year) */
+function drawSankey(sel, data, year) {
+  // d3-sankey must be loaded separately
+  if (typeof d3.sankey !== "function") {
+    alertIn(sel, "Sankey requires d3-sankey. Include it in your HTML (d3-sankey script).");
+    return;
+  }
+
+  const top = topCountriesByTotal(data, year, 12);
+  if (!top.length) {
+    alertIn(sel, `No country data for year ${year}.`);
+    return;
+  }
+
+  // Build nodes: left = types, right = countries
+  const typeNodes = TYPE_ORDER.map(t => ({ id: `type:${t}`, label: t, kind: "type" }));
+  const countryNodes = top.map(d => ({ id: `c:${d.entity}`, label: d.entity, kind: "country", total: d.total }));
+
+  const nodes = [...typeNodes, ...countryNodes];
+
+  // Links: type -> country weight = deaths of that type in that country
+  const links = [];
+  top.forEach(d => {
+    TYPE_ORDER.forEach(t => {
+      const v = +d[t] || 0;
+      if (v > 0) {
+        links.push({
+          source: `type:${t}`,
+          target: `c:${d.entity}`,
+          value: v,
+          type: t,
+          country: d.entity
+        });
+      }
+    });
+  });
+
+  if (!links.length) {
+    alertIn(sel, `No positive flows for ${year}.`);
+    return;
+  }
+
+  const width = 900;
+  const height = 430;
+  const margin = { top: 12, right: 18, bottom: 10, left: 18 };
+
+  const svg = d3.select(sel).html("")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  d3.select(sel).on("mouseleave", hideTooltip);
+
+  const sankey = d3.sankey()
+    .nodeId(d => d.id)
+    .nodeWidth(16)
+    .nodePadding(10)
+    .extent([[margin.left, margin.top], [width - margin.right, height - margin.bottom]]);
+
+  // IMPORTANT: sankey mutates input; clone to keep safe
+  const graph = sankey({
+    nodes: nodes.map(d => ({ ...d })),
+    links: links.map(d => ({ ...d }))
+  });
+
+  // Links
+  const link = svg.append("g")
+    .attr("fill", "none")
+    .selectAll("path")
+    .data(graph.links)
+    .join("path")
+    .attr("d", d3.sankeyLinkHorizontal())
+    .attr("stroke", d => TYPE_COLORS(d.type))
+    .attr("stroke-opacity", 0.35)
+    .attr("stroke-width", d => Math.max(1, d.width))
+    .on("mousemove", (ev, d) => {
+      const html =
+        `<strong>${d.type}</strong> → <strong>${d.country}</strong><br/>` +
+        `${d3.format(",")(Math.round(d.value))} deaths (${year})`;
+      showTooltip(ev, html);
+    })
+    .on("mouseleave", hideTooltip);
+
+  // Nodes
+  const node = svg.append("g")
+    .selectAll("g")
+    .data(graph.nodes)
+    .join("g");
+
+  node.append("rect")
+    .attr("x", d => d.x0)
+    .attr("y", d => d.y0)
+    .attr("height", d => Math.max(1, d.y1 - d.y0))
+    .attr("width", d => d.x1 - d.x0)
+    .attr("rx", 3)
+    .attr("fill", d => d.kind === "type" ? TYPE_COLORS(d.label) : "#9ca3af")
+    .attr("opacity", d => d.kind === "type" ? 0.85 : 0.7)
+    .on("mousemove", (ev, d) => {
+      const v = d.value || 0;
+      const html = `<strong>${d.label}</strong><br/>Total flow: ${d3.format(",")(Math.round(v))}`;
+      showTooltip(ev, html);
+    })
+    .on("mouseleave", hideTooltip);
+
+  // Labels
+  node.append("text")
+    .attr("x", d => d.x0 < width / 2 ? d.x1 + 6 : d.x0 - 6)
+    .attr("y", d => (d.y0 + d.y1) / 2)
+    .attr("dy", "0.32em")
+    .attr("text-anchor", d => d.x0 < width / 2 ? "start" : "end")
+    .attr("font-size", 12)
+    .attr("fill", "#111827")
+    .text(d => d.label);
+
+  // Small caption (kept minimal)
+  d3.select(sel)
+    .append("div")
+    .attr("class", "caption")
+    .text(`Sankey (Top 12 countries by total deaths) — link width encodes deaths (flow) in ${year}.`);
+}
+
+/* 14) Country similarity network — force-directed graph (snapshot year) */
+function drawCountrySimilarityNetwork(sel, data, year) {
+  // Following slides: force-directed is great but hairball risk → filter edges (E < ~4N)  [oai_citation:2‡14 - Networks.pdf](sediment://file_00000000410c720a805e0d09851f50b8)
+  const top = topCountriesByTotal(data, year, 18);
+  if (!top.length) {
+    alertIn(sel, `No country data for year ${year}.`);
+    return;
+  }
+
+  // Build nodes with a magnitude (size) channel = total deaths
+  const nodes = top.map(d => ({
+    id: d.entity,
+    total: d.total,
+    vec: typeVector(d)
+  }));
+
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const totals = nodes.map(n => n.total);
+  const size = d3.scaleSqrt()
+    .domain([d3.min(totals) || 1, d3.max(totals) || 1])
+    .range([6, 22]);
+
+  // Build dense similarities, then sparsify:
+  // - only keep edges above threshold
+  // - and per-node keep topK strongest to avoid hairball
+  const THRESH = 0.65;
+  const TOPK = 3;
+
+  const candidate = [];
+  for (let i = 0; i < nodes.length; i += 1) {
+    for (let j = i + 1; j < nodes.length; j += 1) {
+      const a = nodes[i], b = nodes[j];
+      const s = cosineSim(a.vec, b.vec);
+      if (s >= THRESH) {
+        candidate.push({ source: a.id, target: b.id, sim: s });
+      }
+    }
+  }
+
+  // Per-node topK filtering
+  const adj = new Map(nodes.map(n => [n.id, []]));
+  candidate.forEach(e => {
+    adj.get(e.source).push(e);
+    adj.get(e.target).push(e);
+  });
+
+  const keep = new Set();
+  adj.forEach(list => {
+    list.sort((a, b) => d3.descending(a.sim, b.sim));
+    list.slice(0, TOPK).forEach(e => keep.add(`${e.source}|||${e.target}`));
+  });
+
+  const links = candidate.filter(e => keep.has(`${e.source}|||${e.target}`));
+  if (!links.length) {
+    alertIn(sel, `No similarity links above threshold (${THRESH}) for ${year}. Try lowering THRESH.`);
+    return;
+  }
+
+  const width = 900;
+  const height = 430;
+  const margin = { top: 10, right: 10, bottom: 10, left: 10 };
+
+  const svg = d3.select(sel).html("")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  d3.select(sel).on("mouseleave", hideTooltip);
+
+  // Scales for link width / opacity encode similarity strength
+  const simExtent = d3.extent(links, d => d.sim);
+  const w = d3.scaleLinear()
+    .domain([simExtent[0] || THRESH, simExtent[1] || 1])
+    .range([1, 5]);
+
+  const o = d3.scaleLinear()
+    .domain([simExtent[0] || THRESH, simExtent[1] || 1])
+    .range([0.25, 0.8]);
+
+  // Draw links
+  const link = svg.append("g")
+    .attr("class", "net-links")
+    .selectAll("line")
+    .data(links)
+    .join("line")
+    .attr("stroke", "#94a3b8")
+    .attr("stroke-width", d => w(d.sim))
+    .attr("stroke-opacity", d => o(d.sim));
+
+  // Draw nodes
+  const node = svg.append("g")
+    .attr("class", "net-nodes")
+    .selectAll("circle")
+    .data(nodes)
+    .join("circle")
+    .attr("r", d => size(d.total))
+    .attr("fill", "#60a5fa")
+    .attr("stroke", "#ffffff")
+    .attr("stroke-width", 1.2)
+    .call(
+      d3.drag()
+        .on("start", (ev, d) => {
+          if (!ev.active) sim.alphaTarget(0.25).restart();
+          d.fx = d.x;
+          d.fy = d.y;
+        })
+        .on("drag", (ev, d) => {
+          d.fx = ev.x;
+          d.fy = ev.y;
+        })
+        .on("end", (ev, d) => {
+          if (!ev.active) sim.alphaTarget(0);
+          d.fx = null;
+          d.fy = null;
+        })
+    )
+    .on("mousemove", (ev, d) => {
+      const html =
+        `<strong>${d.id}</strong><br/>` +
+        `Total deaths: ${d3.format(",")(Math.round(d.total))}<br/>` +
+        `Vector: [${TYPE_ORDER.map((t, i) => `${t}: ${d3.format(",")(Math.round(d.vec[i]))}`).join(", ")}]`;
+      showTooltip(ev, html);
+    })
+    .on("mouseleave", hideTooltip);
+
+  // Labels (kept light to reduce clutter)
+  const label = svg.append("g")
+    .attr("class", "net-labels")
+    .selectAll("text")
+    .data(nodes)
+    .join("text")
+    .attr("font-size", 11)
+    .attr("fill", "#111827")
+    .attr("text-anchor", "middle")
+    .attr("dy", d => -size(d.total) - 4)
+    .text(d => d.id);
+
+  // Force simulation (classic force-directed)  [oai_citation:3‡14 - Networks.pdf](sediment://file_00000000410c720a805e0d09851f50b8)
+  const sim = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links).id(d => d.id).distance(d => 140 - 60 * d.sim))
+    .force("charge", d3.forceManyBody().strength(-260))
+    .force("center", d3.forceCenter(width / 2, height / 2))
+    .force("collide", d3.forceCollide().radius(d => size(d.total) + 4))
+    .on("tick", () => {
+      link
+        .attr("x1", d => byId.get(d.source.id || d.source).x)
+        .attr("y1", d => byId.get(d.source.id || d.source).y)
+        .attr("x2", d => byId.get(d.target.id || d.target).x)
+        .attr("y2", d => byId.get(d.target.id || d.target).y);
+
+      node
+        .attr("cx", d => d.x = Math.max(margin.left, Math.min(width - margin.right, d.x)))
+        .attr("cy", d => d.y = Math.max(margin.top, Math.min(height - margin.bottom, d.y)));
+
+      label
+        .attr("x", d => d.x)
+        .attr("y", d => d.y);
+    });
+
+  d3.select(sel)
+    .append("div")
+    .attr("class", "caption")
+    .text(`Network (Top 18 countries) — edges connect countries with cosine similarity ≥ ${THRESH} (top-${TOPK} per node kept to avoid “hairball”). Node size encodes total deaths in ${year}.`);
 }
