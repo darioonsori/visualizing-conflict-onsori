@@ -1910,30 +1910,94 @@ function drawSankey(sel, data, year) {
     return;
   }
 
-  const top = topCountriesByTotal(data, year, 12);
-  if (!top.length) {
+  // --- Parameters you can tweak ---
+  const TOP_N = 10;                // how many countries to show explicitly
+  const OTHER_LABEL = "Other countries";
+  const width = 900;
+  const height = 430;
+  const margin = { top: 12, right: 18, bottom: 10, left: 18 };
+
+  // Filter snapshot rows
+  const snap = data.filter(d => d.year === year && (d.total || 0) > 0);
+  if (!snap.length) {
     alertIn(sel, `No country data for year ${year}.`);
     return;
   }
 
-  // Build nodes: left = types, right = countries
+  // ---------------------------------------------------------------------------
+  // (1) Robust totals per country + sorted countries
+  // ---------------------------------------------------------------------------
+  const totalsByCountry = d3.rollup(
+    snap,
+    v => d3.sum(v, d => d.total || 0),
+    d => d.entity
+  );
+
+  const sortedCountries = Array.from(totalsByCountry.entries())
+    .sort((a, b) => d3.descending(a[1], b[1]))
+    .map(d => d[0]);
+
+  const topCountries = sortedCountries.slice(0, TOP_N);
+
+  // ---------------------------------------------------------------------------
+  // (2) Dominant type per country (for opacity emphasis)
+  // ---------------------------------------------------------------------------
+  const dominantTypeByCountry = {};
+  topCountries.forEach(c => {
+    const rows = snap.filter(d => d.entity === c);
+    // In your data there should be 1 row per country-year, but this is safe anyway.
+    let bestType = TYPE_ORDER[0];
+    let bestVal = -Infinity;
+
+    TYPE_ORDER.forEach(t => {
+      const v = d3.sum(rows, d => (+d[t] || 0));
+      if (v > bestVal) {
+        bestVal = v;
+        bestType = t;
+      }
+    });
+
+    dominantTypeByCountry[c] = bestType;
+  });
+
+  // ---------------------------------------------------------------------------
+  // Build nodes: left = types, right = countries (+ other)
+  // ---------------------------------------------------------------------------
   const typeNodes = TYPE_ORDER.map(t => ({ id: `type:${t}`, label: t, kind: "type" }));
-  const countryNodes = top.map(d => ({ id: `c:${d.entity}`, label: d.entity, kind: "country", total: d.total }));
 
-  const nodes = [...typeNodes, ...countryNodes];
+  const countryNodes = topCountries.map(c => ({
+    id: `c:${c}`,
+    label: c,
+    kind: "country",
+    total: totalsByCountry.get(c) || 0
+  }));
 
-  // Links: type -> country weight = deaths of that type in that country
+  // Include "Other countries" node only if needed
+  const hasOther = sortedCountries.length > TOP_N;
+  const otherNode = hasOther
+    ? [{ id: `c:${OTHER_LABEL}`, label: OTHER_LABEL, kind: "country", total: 0 }]
+    : [];
+
+  const nodes = [...typeNodes, ...countryNodes, ...otherNode];
+
+  // ---------------------------------------------------------------------------
+  // Links: type -> (country or other)
+  // ---------------------------------------------------------------------------
   const links = [];
-  top.forEach(d => {
+
+  snap.forEach(d => {
+    const targetCountry = topCountries.includes(d.entity) ? d.entity : OTHER_LABEL;
+    if (!topCountries.includes(d.entity) && !hasOther) return;
+
     TYPE_ORDER.forEach(t => {
       const v = +d[t] || 0;
       if (v > 0) {
         links.push({
           source: `type:${t}`,
-          target: `c:${d.entity}`,
+          target: `c:${targetCountry}`,
           value: v,
           type: t,
-          country: d.entity
+          country: targetCountry
         });
       }
     });
@@ -1944,10 +2008,9 @@ function drawSankey(sel, data, year) {
     return;
   }
 
-  const width = 900;
-  const height = 430;
-  const margin = { top: 12, right: 18, bottom: 10, left: 18 };
-
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
   const svg = d3.select(sel).html("")
     .append("svg")
     .attr("width", width)
@@ -1975,8 +2038,15 @@ function drawSankey(sel, data, year) {
     .join("path")
     .attr("d", d3.sankeyLinkHorizontal())
     .attr("stroke", d => TYPE_COLORS(d.type))
-    .attr("stroke-opacity", 0.35)
     .attr("stroke-width", d => Math.max(1, d.width))
+    .attr("stroke-opacity", d => {
+      // (3) Emphasize dominant type links for top countries
+      if (d.country === OTHER_LABEL) return 0.20;
+
+      const dom = dominantTypeByCountry[d.country];
+      if (!dom) return 0.35;
+      return d.type === dom ? 0.75 : 0.25;
+    })
     .on("mousemove", (ev, d) => {
       const html =
         `<strong>${d.type}</strong> → <strong>${d.country}</strong><br/>` +
@@ -1998,10 +2068,18 @@ function drawSankey(sel, data, year) {
     .attr("width", d => d.x1 - d.x0)
     .attr("rx", 3)
     .attr("fill", d => d.kind === "type" ? TYPE_COLORS(d.label) : "#9ca3af")
-    .attr("opacity", d => d.kind === "type" ? 0.85 : 0.7)
+    .attr("opacity", d => d.kind === "type" ? 0.85 : (d.label === OTHER_LABEL ? 0.55 : 0.7))
     .on("mousemove", (ev, d) => {
       const v = d.value || 0;
-      const html = `<strong>${d.label}</strong><br/>Total flow: ${d3.format(",")(Math.round(v))}`;
+
+      // extra info for countries: show dominant type
+      let extra = "";
+      if (d.kind === "country" && d.label !== OTHER_LABEL) {
+        const dom = dominantTypeByCountry[d.label];
+        if (dom) extra = `<br/>Dominant type: <strong>${dom}</strong>`;
+      }
+
+      const html = `<strong>${d.label}</strong><br/>Total flow: ${d3.format(",")(Math.round(v))}${extra}`;
       showTooltip(ev, html);
     })
     .on("mouseleave", hideTooltip);
@@ -2016,11 +2094,11 @@ function drawSankey(sel, data, year) {
     .attr("fill", "#111827")
     .text(d => d.label);
 
-  // Small caption (kept minimal)
+  // Caption
   d3.select(sel)
     .append("div")
     .attr("class", "caption")
-    .text(`Sankey (Top 12 countries by total deaths) — link width encodes deaths (flow) in ${year}.`);
+    .text(`Sankey (Top ${TOP_N} countries + ${OTHER_LABEL}) — link width encodes deaths (flow) in ${year}.`);
 }
 
 /* 14) Country similarity network — force-directed graph (snapshot year) */
