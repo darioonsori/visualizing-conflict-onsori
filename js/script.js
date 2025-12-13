@@ -521,7 +521,7 @@ function drawWorldHeatmap(sel, worldRows) {
     .attr("y", d => y(d.row))
     .attr("width", x.bandwidth())
     .attr("height", y.bandwidth())
-    .attr("fill", d => color(Math.log10(d.value + 1))))
+    .attr("fill", d => color(Math.log10(d.value + 1)))
     .on("mousemove", (ev, d) => {
       const html =
         `<strong>${d.row}</strong> — ${d.col}<br/>` +
