@@ -10,7 +10,7 @@
 
   <!-- D3 v7 (as required in the course) -->
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-
+  <script src="https://cdn.jsdelivr.net/npm/d3-sankey@0.12.3/dist/d3-sankey.min.js"></script>
   <!-- Visualization logic -->
   <script defer src="js/script.js?v=2"></script>
 </head>
@@ -246,6 +246,28 @@
       </div>
     </section>
 
+    <!-- =============================== -->
+    <!-- Section 5 — Connection visualization -->
+    <!-- =============================== -->
+    <section aria-labelledby="conn-title">
+      <h2 id="conn-title">Connection visualizations</h2>
+      <p class="note">
+        This section shows connection data using a Sankey diagram (flows) and a network diagram (relationships).
+      </p>
+    
+      <article class="card">
+        <h3>Sankey — conflict type → countries (<span id="year-sankey">2023</span>)</h3>
+        <div id="sankey" role="img" aria-label="Sankey diagram"></div>
+        <p class="caption">Link width encodes deaths; sources are conflict types, targets are top countries.</p>
+      </article>
+    
+      <article class="card">
+        <h3>Network — similarity between countries (composition by type, <span id="year-network">2023</span>)</h3>
+        <div id="network" role="img" aria-label="Network diagram"></div>
+        <p class="caption">Edges connect countries with similar distributions of conflict types.</p>
+      </article>
+    </section>
+    
     <!-- Footer -->
     <footer class="site-footer">
       <p>© 2025 — Dario Onsori. Data: UCDP via Our World in Data (CC BY).</p>
