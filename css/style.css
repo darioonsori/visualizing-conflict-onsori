@@ -80,7 +80,7 @@ section { margin: 24px 0; }
 
 #bar-top10, #grouped, #heatmap, #stack100, #waffle,
 #histogram, #violin, #boxplot, #timeseries,
-#map-choropleth, #map-symbol {
+#map-choropleth, #map-symbol, #sankey, #network {
   width: 100%;
   overflow: visible;
 }
