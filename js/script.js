@@ -3,24 +3,26 @@
  * Dataset: UCDP via Our World in Data
  *
  * Section 1 — Comparing categories
- *  1) Top-10 barchart (absolute)            -> #bar-top10
- *  2) Grouped barchart (selected countries) -> #grouped
- *  3) Heatmap (World totals, type × year)   -> #heatmap
- *  4) 100% stacked barchart (World shares)  -> #stack100
- *  5) Waffle chart (World composition Y)    -> #waffle
+ * 1) Top-10 barchart (absolute)            -> #bar-top10
+ * 2) Grouped barchart (selected countries) -> #grouped
+ * 3) Heatmap (World totals, type × year)   -> #heatmap
+ * 4) 100% stacked barchart (World shares)  -> #stack100
+ * 5) Waffle chart (World composition Y)    -> #waffle
  *
  * Section 2 — Distributions (snapshot year)
- *  6) Histogram (country totals)            -> #histogram
- *  7) Violin plot (by conflict type)        -> #violin
- *  8) Boxplot (by conflict type)            -> #boxplot
+ * 6) Histogram (country totals)            -> #histogram
+ * 7) Violin plot (by conflict type)        -> #violin
+ * 8) Boxplot (by conflict type)            -> #boxplot
  *
  * Section 3 — Temporal patterns
- *  9) Line chart (World totals over time)   -> #timeseries
+ * 9) Line chart (World totals over time)   -> #timeseries
  *
  * Section 4 — Spatial patterns
  * 10) Choropleth map (country totals, snapshot year)              -> #map-choropleth
  * 11) Proportional symbol map (country totals as circles, snapshot year) -> #map-symbol
  * 12) Contour / isopleth map (smoothed intensity surface, snapshot year) -> #map-contour
+ * 13) Sankey diagram (type → countries, snapshot year) -> #sankey
+ * 14) Similarity network (composition by type, year)   -> #network
  *******************************************************/
 
 /* ---------- Global configuration ---------- */
