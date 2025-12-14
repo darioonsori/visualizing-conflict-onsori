@@ -2239,167 +2239,303 @@ function drawSankey(sel, data, year) {
     .text(`Sankey (Top ${TOP_N} countries + Other countries) — link width encodes deaths (flow) in ${year}.`);
 }
 
-/* 14) Country similarity network — force-directed graph (snapshot year) */
-function drawCountrySimilarityNetwork(sel, data, year) {
-  // Following slides: force-directed is great but hairball risk → filter edges (E < ~4N)  [oai_citation:2‡14 - Networks.pdf](sediment://file_00000000410c720a805e0d09851f50b8)
-  const top = topCountriesByTotal(data, year, 18);
-  if (!top.length) {
+/* 14) Network — similarity between countries (composition by type, snapshot year) */
+function drawNetwork(sel, data, year) {
+  const TOP_N = 18;         // number of nodes
+  const SIM_THRESHOLD = 0.65; // minimum similarity
+  const TOP_K = 3;          // keep only top-K links per node (reduces hairball)
+
+  const rows = topCountriesByTotal(data, year, TOP_N);
+  if (!rows.length) {
     alertIn(sel, `No country data for year ${year}.`);
     return;
   }
 
-  // Build nodes with a magnitude (size) channel = total deaths
-  const nodes = top.map(d => ({
+  // ---- Build nodes
+  const nodes = rows.map(d => ({
     id: d.entity,
-    total: d.total,
-    vec: typeVector(d)
+    label: d.entity,
+    total: +d.total || 0,
+    vec: typeVector(d),
+    // pin state (drag)
+    fx: null,
+    fy: null
   }));
 
-  const byId = new Map(nodes.map(n => [n.id, n]));
-  const totals = nodes.map(n => n.total);
-  const size = d3.scaleSqrt()
-    .domain([d3.min(totals) || 1, d3.max(totals) || 1])
-    .range([6, 22]);
+  // helper maps
+  const nodeById = new Map(nodes.map(n => [n.id, n]));
 
-  // Build dense similarities, then sparsify:
-  // - only keep edges above threshold
-  // - and per-node keep topK strongest to avoid hairball
-  const THRESH = 0.65;
-  const TOPK = 3;
-
-  const candidate = [];
+  // ---- Build all pairwise links with cosine similarity
+  const allLinks = [];
   for (let i = 0; i < nodes.length; i += 1) {
     for (let j = i + 1; j < nodes.length; j += 1) {
       const a = nodes[i], b = nodes[j];
-      const s = cosineSim(a.vec, b.vec);
-      if (s >= THRESH) {
-        candidate.push({ source: a.id, target: b.id, sim: s });
+      const sim = cosineSim(a.vec, b.vec);
+      if (sim >= SIM_THRESHOLD) {
+        allLinks.push({ source: a.id, target: b.id, sim });
       }
     }
   }
 
-  // Per-node topK filtering
-  const adj = new Map(nodes.map(n => [n.id, []]));
-  candidate.forEach(e => {
-    adj.get(e.source).push(e);
-    adj.get(e.target).push(e);
-  });
-
-  const keep = new Set();
-  adj.forEach(list => {
-    list.sort((a, b) => d3.descending(a.sim, b.sim));
-    list.slice(0, TOPK).forEach(e => keep.add(`${e.source}|||${e.target}`));
-  });
-
-  const links = candidate.filter(e => keep.has(`${e.source}|||${e.target}`));
-  if (!links.length) {
-    alertIn(sel, `No similarity links above threshold (${THRESH}) for ${year}. Try lowering THRESH.`);
+  if (!allLinks.length) {
+    alertIn(sel, `No links above similarity threshold (${SIM_THRESHOLD}) in ${year}.`);
     return;
   }
 
+  // ---- Keep top-K links per node (by similarity)
+  const linksByNode = new Map(nodes.map(n => [n.id, []]));
+  allLinks.forEach(l => {
+    linksByNode.get(l.source).push(l);
+    linksByNode.get(l.target).push(l);
+  });
+
+  const kept = new Set();
+  linksByNode.forEach(list => {
+    list
+      .slice()
+      .sort((a, b) => d3.descending(a.sim, b.sim))
+      .slice(0, TOP_K)
+      .forEach(l => {
+        // undirected key
+        const key = l.source < l.target ? `${l.source}__${l.target}` : `${l.target}__${l.source}`;
+        kept.add(key);
+      });
+  });
+
+  const links = allLinks.filter(l => {
+    const key = l.source < l.target ? `${l.source}__${l.target}` : `${l.target}__${l.source}`;
+    return kept.has(key);
+  });
+
+  // ---- Sizing
   const width = 900;
   const height = 430;
   const margin = { top: 10, right: 10, bottom: 10, left: 10 };
 
-  const svg = d3.select(sel).html("")
-    .append("svg")
+  const r = d3.scaleSqrt()
+    .domain([0, d3.max(nodes, d => d.total) || 1])
+    .range([5, 22]);
+
+  const strokeW = d3.scaleLinear()
+    .domain(d3.extent(links, d => d.sim))
+    .range([1.2, 4.0]);
+
+  // ---- Container
+  const root = d3.select(sel).html("")
+    .style("position", "relative");
+
+  // small reset button (no CSS needed)
+  const btn = root.append("button")
+    .text("Reset layout")
+    .style("position", "absolute")
+    .style("right", "10px")
+    .style("top", "10px")
+    .style("z-index", 2)
+    .style("padding", "6px 10px")
+    .style("border-radius", "8px")
+    .style("border", "1px solid #e5e7eb")
+    .style("background", "white")
+    .style("cursor", "pointer");
+
+  const svg = root.append("svg")
     .attr("width", width)
     .attr("height", height);
 
   d3.select(sel).on("mouseleave", hideTooltip);
 
-  // Scales for link width / opacity encode similarity strength
-  const simExtent = d3.extent(links, d => d.sim);
-  const w = d3.scaleLinear()
-    .domain([simExtent[0] || THRESH, simExtent[1] || 1])
-    .range([1, 5]);
+  // Zoom/Pan
+  const gZoom = svg.append("g");
+  svg.call(
+    d3.zoom()
+      .scaleExtent([0.6, 2.5])
+      .on("zoom", (ev) => gZoom.attr("transform", ev.transform))
+  );
 
-  const o = d3.scaleLinear()
-    .domain([simExtent[0] || THRESH, simExtent[1] || 1])
-    .range([0.25, 0.8]);
+  // Background (so you can drag on empty space)
+  gZoom.append("rect")
+    .attr("x", 0).attr("y", 0)
+    .attr("width", width).attr("height", height)
+    .attr("fill", "transparent");
 
-  // Draw links
-  const link = svg.append("g")
-    .attr("class", "net-links")
+  const g = gZoom.append("g")
+    .attr("transform", `translate(${margin.left},${margin.top})`);
+
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+
+  // ---- Simulation
+  const sim = d3.forceSimulation(nodes)
+    .force("link", d3.forceLink(links)
+      .id(d => d.id)
+      .distance(d => 220 - 160 * d.sim)  // higher sim = closer
+      .strength(d => 0.25 + 0.55 * d.sim)
+    )
+    .force("charge", d3.forceManyBody().strength(-260))
+    .force("center", d3.forceCenter(innerW / 2, innerH / 2))
+    .force("collide", d3.forceCollide(d => r(d.total) + 4).iterations(2))
+    // keep nodes inside box (soft)
+    .force("x", d3.forceX(innerW / 2).strength(0.05))
+    .force("y", d3.forceY(innerH / 2).strength(0.05));
+
+  // ---- Draw links
+  const link = g.append("g")
+    .attr("stroke", "#9ca3af")
+    .attr("stroke-opacity", 0.65)
     .selectAll("line")
     .data(links)
     .join("line")
-    .attr("stroke", "#94a3b8")
-    .attr("stroke-width", d => w(d.sim))
-    .attr("stroke-opacity", d => o(d.sim));
+    .attr("stroke-width", d => strokeW(d.sim));
 
-  // Draw nodes
-  const node = svg.append("g")
-    .attr("class", "net-nodes")
+  // ---- Draw nodes
+  const node = g.append("g")
     .selectAll("circle")
     .data(nodes)
     .join("circle")
-    .attr("r", d => size(d.total))
-    .attr("fill", "#60a5fa")
-    .attr("stroke", "#ffffff")
-    .attr("stroke-width", 1.2)
-    .call(
-      d3.drag()
-        .on("start", (ev, d) => {
-          if (!ev.active) sim.alphaTarget(0.25).restart();
-          d.fx = d.x;
-          d.fy = d.y;
+    .attr("r", d => r(d.total))
+    .attr("fill", "#3b82f6")
+    .attr("fill-opacity", 0.75)
+    .attr("stroke", "white")
+    .attr("stroke-width", 1.5)
+    .style("cursor", "grab");
+
+  // ---- Labels (with outline for readability)
+  const label = g.append("g")
+    .selectAll("text")
+    .data(nodes)
+    .join("text")
+    .text(d => d.label)
+    .attr("font-size", 11)
+    .attr("fill", "#111827")
+    .attr("paint-order", "stroke")
+    .attr("stroke", "white")
+    .attr("stroke-width", 3)
+    .attr("stroke-linejoin", "round")
+    .style("pointer-events", "none");
+
+  // ---- Hover highlight (neighbors)
+  const neighbor = new Map();
+  links.forEach(l => {
+    const a = typeof l.source === "string" ? l.source : l.source.id;
+    const b = typeof l.target === "string" ? l.target : l.target.id;
+    neighbor.set(`${a}__${b}`, true);
+    neighbor.set(`${b}__${a}`, true);
+  });
+  const isNeighbor = (a, b) => neighbor.get(`${a.id}__${b.id}`) || a.id === b.id;
+
+  function focusNode(d) {
+    node.attr("fill-opacity", n => isNeighbor(d, n) ? 0.9 : 0.12)
+        .attr("stroke-opacity", n => isNeighbor(d, n) ? 1 : 0.15);
+
+    label.attr("opacity", n => isNeighbor(d, n) ? 1 : 0.15);
+
+    link.attr("stroke-opacity", l => {
+          const s = typeof l.source === "string" ? l.source : l.source.id;
+          const t = typeof l.target === "string" ? l.target : l.target.id;
+          return (s === d.id || t === d.id) ? 0.95 : 0.08;
         })
-        .on("drag", (ev, d) => {
-          d.fx = ev.x;
-          d.fy = ev.y;
-        })
-        .on("end", (ev, d) => {
-          if (!ev.active) sim.alphaTarget(0);
-          d.fx = null;
-          d.fy = null;
-        })
-    )
-    .on("mousemove", (ev, d) => {
+        .attr("stroke-width", l => {
+          const s = typeof l.source === "string" ? l.source : l.source.id;
+          const t = typeof l.target === "string" ? l.target : l.target.id;
+          return (s === d.id || t === d.id) ? Math.max(2.4, strokeW(l.sim)) : strokeW(l.sim);
+        });
+  }
+
+  function resetFocus() {
+    node.attr("fill-opacity", 0.75).attr("stroke-opacity", 1);
+    label.attr("opacity", 1);
+    link.attr("stroke-opacity", 0.65).attr("stroke-width", d => strokeW(d.sim));
+  }
+
+  // ---- Tooltip for nodes
+  node.on("mousemove", (ev, d) => {
+      const parts = TYPE_ORDER
+        .map(k => `${k}: ${d3.format(",")(Math.round(d.vec[TYPE_ORDER.indexOf(k)] || 0))}`)
+        .join(", ");
+
       const html =
-        `<strong>${d.id}</strong><br/>` +
-        `Total deaths: ${d3.format(",")(Math.round(d.total))}<br/>` +
-        `Vector: [${TYPE_ORDER.map((t, i) => `${t}: ${d3.format(",")(Math.round(d.vec[i]))}`).join(", ")}]`;
+        `<strong>${d.label}</strong><br/>` +
+        `Total deaths: ${d3.format(",")(Math.round(d.total))} (${year})<br/>` +
+        `<span style="opacity:.85">Vector: [${parts}]</span>`;
+      showTooltip(ev, html);
+      focusNode(d);
+    })
+    .on("mouseleave", () => {
+      hideTooltip();
+      resetFocus();
+    })
+    .on("dblclick", (ev, d) => {
+      // unpin
+      d.fx = null;
+      d.fy = null;
+      sim.alpha(0.6).restart();
+    });
+
+  // ---- Tooltip for links
+  link.on("mousemove", (ev, d) => {
+      const s = typeof d.source === "string" ? d.source : d.source.id;
+      const t = typeof d.target === "string" ? d.target : d.target.id;
+      const html =
+        `<strong>${s}</strong> ↔ <strong>${t}</strong><br/>` +
+        `Cosine similarity: ${d3.format(".2f")(d.sim)}`;
       showTooltip(ev, html);
     })
     .on("mouseleave", hideTooltip);
 
-  // Labels (kept light to reduce clutter)
-  const label = svg.append("g")
-    .attr("class", "net-labels")
-    .selectAll("text")
-    .data(nodes)
-    .join("text")
-    .attr("font-size", 11)
-    .attr("fill", "#111827")
-    .attr("text-anchor", "middle")
-    .attr("dy", d => -size(d.total) - 4)
-    .text(d => d.id);
-
-  // Force simulation (classic force-directed)  [oai_citation:3‡14 - Networks.pdf](sediment://file_00000000410c720a805e0d09851f50b8)
-  const sim = d3.forceSimulation(nodes)
-    .force("link", d3.forceLink(links).id(d => d.id).distance(d => 140 - 60 * d.sim))
-    .force("charge", d3.forceManyBody().strength(-260))
-    .force("center", d3.forceCenter(width / 2, height / 2))
-    .force("collide", d3.forceCollide().radius(d => size(d.total) + 4))
-    .on("tick", () => {
-      link
-        .attr("x1", d => byId.get(d.source.id || d.source).x)
-        .attr("y1", d => byId.get(d.source.id || d.source).y)
-        .attr("x2", d => byId.get(d.target.id || d.target).x)
-        .attr("y2", d => byId.get(d.target.id || d.target).y);
-
-      node
-        .attr("cx", d => d.x = Math.max(margin.left, Math.min(width - margin.right, d.x)))
-        .attr("cy", d => d.y = Math.max(margin.top, Math.min(height - margin.bottom, d.y)));
-
-      label
-        .attr("x", d => d.x)
-        .attr("y", d => d.y);
+  // ---- Drag behavior: pin on drag end
+  const drag = d3.drag()
+    .on("start", (ev, d) => {
+      if (!ev.active) sim.alphaTarget(0.25).restart();
+      d.fx = d.x;
+      d.fy = d.y;
+      d3.select(ev.sourceEvent?.target || null).style("cursor", "grabbing");
+    })
+    .on("drag", (ev, d) => {
+      d.fx = ev.x;
+      d.fy = ev.y;
+    })
+    .on("end", (ev, d) => {
+      if (!ev.active) sim.alphaTarget(0);
+      d3.select(ev.sourceEvent?.target || null).style("cursor", "grab");
     });
 
-  d3.select(sel)
-    .append("div")
+  node.call(drag);
+
+  // ---- Reset button
+  btn.on("click", () => {
+    nodes.forEach(n => { n.fx = null; n.fy = null; });
+    sim.alpha(1).restart();
+  });
+
+  // ---- Tick
+  sim.on("tick", () => {
+    // clamp to bounds (hard clamp avoids escaping)
+    nodes.forEach(n => {
+      const rr = r(n.total);
+      n.x = Math.max(rr, Math.min(innerW - rr, n.x));
+      n.y = Math.max(rr, Math.min(innerH - rr, n.y));
+    });
+
+    link
+      .attr("x1", d => (typeof d.source === "string" ? nodeById.get(d.source).x : d.source.x))
+      .attr("y1", d => (typeof d.source === "string" ? nodeById.get(d.source).y : d.source.y))
+      .attr("x2", d => (typeof d.target === "string" ? nodeById.get(d.target).x : d.target.x))
+      .attr("y2", d => (typeof d.target === "string" ? nodeById.get(d.target).y : d.target.y));
+
+    node
+      .attr("cx", d => d.x)
+      .attr("cy", d => d.y);
+
+    // label offset: above-right
+    label
+      .attr("x", d => d.x + r(d.total) + 6)
+      .attr("y", d => d.y - 6);
+  });
+
+  // Caption
+  root.append("div")
     .attr("class", "caption")
-    .text(`Network (Top 18 countries) — edges connect countries with cosine similarity ≥ ${THRESH} (top-${TOPK} per node kept to avoid “hairball”). Node size encodes total deaths in ${year}.`);
+    .text(
+      `Network (Top ${TOP_N} countries) — edges connect countries with cosine similarity ≥ ${SIM_THRESHOLD} `
+      + `(top-${TOP_K} per node). Node size encodes total deaths in ${year}. Drag to pin; double-click to unpin.`
+    );
 }
