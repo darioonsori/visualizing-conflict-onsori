@@ -290,7 +290,7 @@ Promise.all([
 
   /* ---- Section 5: Connection visualization ---- */
   drawSankey("#sankey", countries, SNAPSHOT_YEAR);
-  drawCountrySimilarityNetwork("#network", countries, SNAPSHOT_YEAR);
+  drawNetwork("#network", countries, SNAPSHOT_YEAR);
   
 }).catch(err => {
   console.error(err);
